@@ -36,6 +36,16 @@ func TestConexionReal(t *testing.T) {
 		}
 		t.Logf("sala creada: %s", host.Code)
 		code = host.Code
+		if role == "host" { // esperar al invitado (otra máquina)
+			deadline := time.Now().Add(4 * time.Minute)
+			for !host.Connected() {
+				if time.Now().After(deadline) {
+					t.Fatal("el invitado nunca llegó")
+				}
+				host.SendState(NewPong(), 0)
+				time.Sleep(50 * time.Millisecond)
+			}
+		}
 	}
 	if role == "guest" || role == "both" {
 		wait := 3 * time.Minute
@@ -49,6 +59,9 @@ func TestConexionReal(t *testing.T) {
 			start := time.Now()
 			for time.Since(start) < 35*time.Second && !guest.Connected() && guest.RTCStatus() != NetNoRoom && guest.RTCStatus() != NetNoInternet {
 				guest.SendInput(100, 0, 0)
+				if host != nil && host.Connected() {
+					host.SendState(NewPong(), 0)
+				}
 				time.Sleep(50 * time.Millisecond)
 			}
 			if guest.Connected() {

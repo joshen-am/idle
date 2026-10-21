@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -47,10 +48,83 @@ type sigMsg struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
+// sigPayload es lo que viaja entre los dos por el servidor. El servidor público solo acepta
+// (y si no, corta la conexión) el formato de la librería PeerJS, así que se traduce a ese formato.
 type sigPayload struct {
-	SDP       *webrtc.SessionDescription `json:"sdp,omitempty"`
-	Candidate *webrtc.ICECandidateInit   `json:"candidate,omitempty"`
-	G         []byte                     `json:"g,omitempty"` // paquete del juego (modo relevo)
+	SDP       *webrtc.SessionDescription
+	Candidate *webrtc.ICECandidateInit
+	G         []byte // paquete del juego (modo relevo), viaja disfrazado de candidato
+}
+
+var connID = fmt.Sprintf("dc_%x", rand.Int63())
+
+type wireCand struct {
+	Candidate        string  `json:"candidate"`
+	SDPMid           *string `json:"sdpMid"`
+	SDPMLineIndex    *uint16 `json:"sdpMLineIndex"`
+	UsernameFragment string  `json:"usernameFragment,omitempty"`
+}
+
+type wirePayload struct {
+	SDP           *webrtc.SessionDescription `json:"sdp,omitempty"`
+	Candidate     *wireCand                  `json:"candidate,omitempty"`
+	Type          string                     `json:"type"`
+	ConnectionID  string                     `json:"connectionId"`
+	Label         string                     `json:"label,omitempty"`
+	Serialization string                     `json:"serialization,omitempty"`
+	Reliable      *bool                      `json:"reliable,omitempty"`
+	Browser       string                     `json:"browser,omitempty"`
+}
+
+const relayTag = "mj:"
+
+func (p sigPayload) MarshalJSON() ([]byte, error) {
+	w := wirePayload{Type: "data", ConnectionID: connID}
+	if p.SDP != nil {
+		f := false
+		w.SDP, w.Browser = p.SDP, "chrome"
+		if p.SDP.Type == webrtc.SDPTypeOffer {
+			w.Label, w.Serialization, w.Reliable = connID, "binary", &f
+		}
+	}
+	mid, idx := "0", uint16(0)
+	if p.Candidate != nil {
+		c := p.Candidate
+		w.Candidate = &wireCand{Candidate: c.Candidate, SDPMid: c.SDPMid, SDPMLineIndex: c.SDPMLineIndex}
+		if c.UsernameFragment != nil {
+			w.Candidate.UsernameFragment = *c.UsernameFragment
+		}
+		if w.Candidate.SDPMid == nil {
+			w.Candidate.SDPMid = &mid
+		}
+		if w.Candidate.SDPMLineIndex == nil {
+			w.Candidate.SDPMLineIndex = &idx
+		}
+	}
+	if p.G != nil {
+		w.Candidate = &wireCand{Candidate: relayTag + base64.StdEncoding.EncodeToString(p.G), SDPMid: &mid, SDPMLineIndex: &idx}
+	}
+	return json.Marshal(w)
+}
+
+func (p *sigPayload) UnmarshalJSON(b []byte) error {
+	var w wirePayload
+	if err := json.Unmarshal(b, &w); err != nil {
+		return err
+	}
+	p.SDP = w.SDP
+	if c := w.Candidate; c != nil {
+		if strings.HasPrefix(c.Candidate, relayTag) {
+			p.G, _ = base64.StdEncoding.DecodeString(strings.TrimPrefix(c.Candidate, relayTag))
+		} else {
+			p.Candidate = &webrtc.ICECandidateInit{Candidate: c.Candidate, SDPMid: c.SDPMid, SDPMLineIndex: c.SDPMLineIndex}
+			if c.UsernameFragment != "" {
+				u := c.UsernameFragment
+				p.Candidate.UsernameFragment = &u
+			}
+		}
+	}
+	return nil
 }
 
 type signal struct {
@@ -104,7 +178,7 @@ func (s *signal) read() (sigMsg, error) {
 		logf("servidor: mensaje raro: %.200s", b)
 		return m, nil // se ignora y se sigue leyendo
 	}
-	if m.Type != "HEARTBEAT" && !(m.Type == "CANDIDATE" && strings.Contains(string(m.Payload), `"g"`)) {
+	if m.Type != "HEARTBEAT" && !(m.Type == "CANDIDATE" && strings.Contains(string(m.Payload), relayTag)) {
 		logf("servidor: llega %s de %s (%d bytes)", m.Type, m.Src, len(b))
 	}
 	return m, nil
