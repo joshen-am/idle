@@ -14,10 +14,7 @@ Después se actualiza sola cada vez que se abre.
 
 ## Publicar una versión
 
-Subir una etiqueta `vX.Y.Z`; GitHub Actions fabrica las dos apps y crea el release.
+En GitHub: Actions → release → Run workflow, con la versión (ej. 1.3.0). Fabrica las dos apps y crea el release.
 
-```sh
-git tag v1.3.0 && git push origin v1.3.0
-```
 
 Fabricar a mano: `./build.sh 1.3.0 joshen-am/idle` (deja los zip en `dist/`).
