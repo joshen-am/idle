@@ -1,0 +1,36 @@
+=== RUN   TestSignalProbe
+20:53:06.964 servidor: llega OPEN de  (15 bytes)
+20:53:06.970 servidor: respuesta OPEN (id idle-v1-p19027e76d57d8461)
+    probe_test.go:67: solo heartbeat         ok (sigue abierta)
+20:53:09.975 servidor: lectura cortada: failed to get reader: context canceled
+20:53:10.380 servidor: llega OPEN de  (15 bytes)
+20:53:10.380 servidor: respuesta OPEN (id idle-v1-p2a33c42518f66542)
+20:53:10.562 servidor: lectura cortada: failed to get reader: received close frame: status = StatusNormalClosure and reason = ""
+    probe_test.go:65: offer minima           CORTADA: failed to get reader: received close frame: status = StatusNormalClosure and reason = ""
+20:53:10.981 servidor: llega OPEN de  (15 bytes)
+20:53:10.981 servidor: respuesta OPEN (id idle-v1-p152cd79b460ae163)
+20:53:11.158 servidor: lectura cortada: failed to get reader: received close frame: status = StatusNormalClosure and reason = ""
+    probe_test.go:65: offer actual           CORTADA: failed to get reader: received close frame: status = StatusNormalClosure and reason = ""
+20:53:11.572 servidor: llega OPEN de  (15 bytes)
+20:53:11.572 servidor: respuesta OPEN (id idle-v1-p71763e49982520e4)
+20:53:11.756 servidor: llega EXPIRE de idle-v1-nadie (73 bytes)
+    probe_test.go:56: offer formato oficial    llega EXPIRE 
+20:53:11.975 servidor: no se pudo enviar HEARTBEAT: failed to write msg: use of closed network connection
+    probe_test.go:67: offer formato oficial  ok (sigue abierta)
+20:53:14.574 servidor: lectura cortada: failed to get reader: context canceled
+20:53:14.971 servidor: llega OPEN de  (15 bytes)
+20:53:14.972 servidor: respuesta OPEN (id idle-v1-p33f897eda49e2edb)
+20:53:15.148 servidor: llega EXPIRE de idle-v1-nadie (73 bytes)
+    probe_test.go:56: candidate oficial        llega EXPIRE 
+20:53:15.381 servidor: no se pudo enviar HEARTBEAT: failed to write msg: failed to acquire lock: context canceled
+20:53:15.982 servidor: no se pudo enviar HEARTBEAT: failed to write msg: use of closed network connection
+20:53:16.574 servidor: no se pudo enviar HEARTBEAT: failed to write msg: use of closed network connection
+    probe_test.go:67: candidate oficial      ok (sigue abierta)
+20:53:17.973 servidor: lectura cortada: failed to get reader: context canceled
+20:53:18.358 servidor: llega OPEN de  (15 bytes)
+20:53:18.358 servidor: respuesta OPEN (id idle-v1-p516b415a360ef9e9)
+20:53:18.525 servidor: lectura cortada: failed to get reader: received close frame: status = StatusNormalClosure and reason = ""
+    probe_test.go:65: g relevo               CORTADA: failed to get reader: received close frame: status = StatusNormalClosure and reason = ""
+--- PASS: TestSignalProbe (12.05s)
+PASS
+ok  	idle	12.137s
