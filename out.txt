@@ -1,0 +1,22 @@
+=== RUN   TestConexionReal
+20:59:20.372 servidor: llega OPEN de  (15 bytes)
+20:59:20.379 servidor: respuesta OPEN (id idle-v1-q4xx)
+    net_test.go:37: sala creada: Q4XX
+20:59:36.017 servidor: llega OFFER de idle-v1-g73f2a4dba891c18c (770 bytes)
+20:59:36.039 rtc: estado connecting
+20:59:36.040 servidor: llega CANDIDATE de idle-v1-g73f2a4dba891c18c (297 bytes)
+20:59:36.044 servidor: llega CANDIDATE de idle-v1-g73f2a4dba891c18c (299 bytes)
+20:59:36.045 servidor: llega CANDIDATE de idle-v1-g73f2a4dba891c18c (328 bytes)
+20:59:36.045 rtc: candidato propio host udp
+20:59:36.046 servidor: llega CANDIDATE de idle-v1-g73f2a4dba891c18c (328 bytes)
+20:59:36.094 rtc: candidato propio srflx udp
+20:59:36.097 rtc: candidato propio srflx udp
+20:59:36.991 rtc: estado connected
+20:59:36.992 rtc: par elegido srflx <-> srflx
+20:59:37.068 rtc: canal abierto
+20:59:37.205 conectado directo (webrtc)
+    net_test.go:103: anfitrión conectado por "rtc"
+20:59:42.228 servidor: lectura cortada: failed to get reader: context canceled
+--- PASS: TestConexionReal (22.31s)
+PASS
+ok  	idle	22.458s
