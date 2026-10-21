@@ -97,10 +97,17 @@ func (s *signal) read() (sigMsg, error) {
 	var m sigMsg
 	_, b, err := s.ws.Read(s.ctx)
 	if err != nil {
+		logf("servidor: lectura cortada: %v", err)
 		return m, err
 	}
-	err = json.Unmarshal(b, &m)
-	return m, err
+	if err = json.Unmarshal(b, &m); err != nil {
+		logf("servidor: mensaje raro: %.200s", b)
+		return m, nil // se ignora y se sigue leyendo
+	}
+	if m.Type != "HEARTBEAT" && !(m.Type == "CANDIDATE" && strings.Contains(string(m.Payload), `"g"`)) {
+		logf("servidor: llega %s de %s (%d bytes)", m.Type, m.Src, len(b))
+	}
+	return m, nil
 }
 
 func (s *signal) write(m sigMsg) {
@@ -109,7 +116,9 @@ func (s *signal) write(m sigMsg) {
 	defer s.wmu.Unlock()
 	wctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
 	defer cancel()
-	s.ws.Write(wctx, websocket.MessageText, b)
+	if err := s.ws.Write(wctx, websocket.MessageText, b); err != nil {
+		logf("servidor: no se pudo enviar %s: %v", m.Type, err)
+	}
 }
 
 func (s *signal) sendTo(dst, typ string, p sigPayload) {

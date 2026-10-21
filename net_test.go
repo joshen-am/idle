@@ -38,7 +38,11 @@ func TestConexionReal(t *testing.T) {
 		code = host.Code
 	}
 	if role == "guest" || role == "both" {
-		deadline := time.Now().Add(3 * time.Minute)
+		wait := 3 * time.Minute
+		if os.Getenv("MJ_ROLE") == "" {
+			wait = 40 * time.Second
+		}
+		deadline := time.Now().Add(wait)
 		for {
 			guest = NewSearcher()
 			guest.JoinCode(code)
