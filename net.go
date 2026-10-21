@@ -23,8 +23,8 @@ const (
 	GamePort = 47800
 	DiscPort = 47801 // anuncios de sala por broadcast
 	magic    = 'M'
-	proto    = 3
-	beaconID = "MJPONG2|"
+	proto    = 4
+	beaconID = "IDLE1|"
 )
 
 type Room struct {
@@ -40,9 +40,10 @@ type StatePkt struct {
 	Winner                 uint8
 	Seq                    uint16
 	Ev                     [EvCount]uint8
+	Flags                  uint8 // 1 = pausado porque alguien se escondió
 }
 
-const statLen = 7*4 + 4 + 2 + EvCount
+const statLen = 7*4 + 4 + 2 + EvCount + 1
 
 // Estado del camino por internet, para mostrarlo en pantalla.
 const (
@@ -80,7 +81,10 @@ type Net struct {
 	rtcSt    int
 	rtcErr   string
 
+	peerAv []byte // personaje del otro
+
 	// lado anfitrión
+	guestPanic   bool
 	guestB       float64
 	guestRematch uint8
 	hasGuestB    bool
@@ -266,11 +270,14 @@ func (n *Net) handle(buf []byte) {
 	switch buf[2] {
 	case 'B':
 		n.bye = true
+	case 'A':
+		n.peerAv = append([]byte(nil), b...)
 	case 'I':
 		if n.host && len(b) >= 5 {
 			n.guestB = float64(math.Float32frombits(binary.LittleEndian.Uint32(b)))
 			n.guestRematch = b[4]
 			n.hasGuestB = true
+			n.guestPanic = len(b) >= 6 && b[5]&1 != 0
 		}
 	case 'S':
 		if !n.host && len(b) >= statLen {
@@ -278,6 +285,7 @@ func (n *Net) handle(buf []byte) {
 			st := StatePkt{A: f(0), B: f(1), X: f(2), Y: f(3), Tm: f(4), VX: f(5), VY: f(6),
 				S1: b[28], S2: b[29], Ph: Phase(b[30]), Winner: b[31], Seq: binary.LittleEndian.Uint16(b[32:])}
 			copy(st.Ev[:], b[34:34+EvCount])
+			st.Flags = b[34+EvCount]
 			if !n.hasSt || int16(st.Seq-n.st.Seq) > 0 { // los paquetes viejos que llegan tarde no sirven
 				n.st, n.hasSt = st, true
 			}
@@ -313,7 +321,7 @@ func (n *Net) send(kind byte, body []byte) {
 	}
 }
 
-func (n *Net) SendState(p *Pong) {
+func (n *Net) SendState(p *Pong, flags uint8) {
 	b := make([]byte, statLen)
 	for i, v := range []float64{p.A, p.B, p.X, p.Y, p.Tm, p.VX, p.VY} {
 		binary.LittleEndian.PutUint32(b[i*4:], math.Float32bits(float32(v)))
@@ -324,14 +332,29 @@ func (n *Net) SendState(p *Pong) {
 	binary.LittleEndian.PutUint16(b[32:], n.seq)
 	n.mu.Unlock()
 	copy(b[34:], p.Ev[:])
+	b[34+EvCount] = flags
 	n.send('S', b)
 }
 
-func (n *Net) SendInput(b float64, rematch uint8) {
-	buf := make([]byte, 5)
+func (n *Net) SendInput(b float64, rematch, flags uint8) {
+	buf := make([]byte, 6)
 	binary.LittleEndian.PutUint32(buf, math.Float32bits(float32(b)))
-	buf[4] = rematch
+	buf[4], buf[5] = rematch, flags
 	n.send('I', buf)
+}
+
+func (n *Net) SendAvatar(av Avatar) { n.send('A', av.Encode()) }
+
+func (n *Net) PeerAvatar() (Avatar, bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return DecodeAvatar(n.peerAv)
+}
+
+func (n *Net) GuestPanic() bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.guestPanic
 }
 
 // ---------- estado ----------

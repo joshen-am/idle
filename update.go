@@ -62,9 +62,9 @@ func newerThan(a, b string) bool {
 
 func assetName() string {
 	if runtime.GOOS == "darwin" {
-		return "MiniJuegos-Mac.zip"
+		return "Idle-Mac.zip"
 	}
-	return "MiniJuegos-Windows.zip"
+	return "Idle-Windows.zip"
 }
 
 // Check corre en segundo plano al abrir la app.
@@ -83,7 +83,7 @@ func (u *Updater) Check() {
 	cl := &http.Client{Timeout: 20 * time.Second}
 	req, _ := http.NewRequest("GET", api, nil)
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "MiniJuegos/"+version)
+	req.Header.Set("User-Agent", "Idle/"+version)
 	res, err := cl.Do(req)
 	if err != nil {
 		logf("actualizar: no se pudo consultar: %v", err)
@@ -162,7 +162,7 @@ func prepare(cl *http.Client, url string) (func() error, error) {
 
 	target := exe // en Windows se reemplaza el .exe
 	if runtime.GOOS == "darwin" {
-		target = filepath.Dir(filepath.Dir(filepath.Dir(exe))) // .../Mini Juegos.app
+		target = filepath.Dir(filepath.Dir(filepath.Dir(exe))) // .../Idle.app
 		if !strings.HasSuffix(target, ".app") {
 			return nil, fmt.Errorf("no está dentro de una .app: %s", exe)
 		}
@@ -190,7 +190,7 @@ func prepare(cl *http.Client, url string) (func() error, error) {
 	if runtime.GOOS == "darwin" {
 		newApp := filepath.Join(stage, filepath.Base(target))
 		if _, err := os.Stat(newApp); err != nil {
-			newApp = filepath.Join(stage, "Mini Juegos.app")
+			newApp = filepath.Join(stage, "Idle.app")
 		}
 		return func() error {
 			old := target + ".old"
@@ -209,7 +209,7 @@ func prepare(cl *http.Client, url string) (func() error, error) {
 	}
 	newExe := filepath.Join(stage, filepath.Base(target))
 	if _, err := os.Stat(newExe); err != nil {
-		newExe = filepath.Join(stage, "MiniJuegos.exe")
+		newExe = filepath.Join(stage, "Idle.exe")
 	}
 	return func() error {
 		old := target + ".old"

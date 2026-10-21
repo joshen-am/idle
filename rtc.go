@@ -18,7 +18,7 @@ import (
 // (intercambia los datos de conexión); después el juego va directo entre ellos con WebRTC.
 // Si la red no deja ir directo, pasa por el servidor de relevo (TURN) de PeerJS.
 
-const idPrefix = "mjpong2-"
+const idPrefix = "idle-v1-"
 
 func signalURL() string {
 	if u := os.Getenv("MJ_SIGNAL"); u != "" { // para pruebas con un servidor propio

@@ -1,12 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
 	"image"
-	"image/color"
-	"image/png"
 	"log"
 	"math"
 	"math/rand"
@@ -14,89 +10,18 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/examples/resources/fonts"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	"github.com/hajimehoshi/ebiten/v2/text/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
-// ---------- colores y letra ----------
-
-func hex(h uint32) color.NRGBA { return color.NRGBA{uint8(h >> 16), uint8(h >> 8), uint8(h), 255} }
-func fade(c color.NRGBA, a float64) color.NRGBA {
-	c.A = uint8(clamp(a, 0, 1) * 255)
-	return c
-}
-
-var (
-	colBg    = hex(0x07080f)
-	colPanel = hex(0x0c0f1f)
-	colCard  = hex(0x12162c)
-	colLine  = hex(0x232a52)
-	colField = hex(0x1a1f3d)
-	colInk   = hex(0xe8ecff)
-	colDim   = hex(0x6b72a8)
-	colP1    = hex(0x34e7ff)
-	colP2    = hex(0xff4fa3)
-	colBall  = hex(0xffe14f)
-	colOk    = hex(0x7dff8a)
-)
-
-var fontSrc *text.GoTextFaceSource
-
-func init() {
-	s, err := text.NewGoTextFaceSource(bytes.NewReader(fonts.PressStart2P_ttf))
-	if err != nil {
-		log.Fatal(err)
-	}
-	fontSrc = s
-}
-
-func rect(dst *ebiten.Image, x, y, w, h float64, c color.Color) {
-	vector.FillRect(dst, float32(x), float32(y), float32(w), float32(h), c, false)
-}
-
-func frame(dst *ebiten.Image, x, y, w, h float64, c color.Color) {
-	rect(dst, x, y, w, 1, c)
-	rect(dst, x, y+h-1, w, 1, c)
-	rect(dst, x, y, 1, h, c)
-	rect(dst, x+w-1, y, 1, h, c)
-}
-
-// txt dibuja texto; align: -1 izquierda, 0 centro, 1 derecha.
-func txt(dst *ebiten.Image, s string, x, y, size float64, c color.Color, align int) {
-	op := &text.DrawOptions{}
-	op.GeoM.Translate(math.Round(x), math.Round(y))
-	op.ColorScale.ScaleWithColor(c)
-	op.PrimaryAlign = [...]text.Align{text.AlignStart, text.AlignCenter, text.AlignEnd}[align+1]
-	text.Draw(dst, s, &text.GoTextFace{Source: fontSrc, Size: size}, op)
-}
-
-// Dibujitos pixelados: lista de rectángulos {x, y, w, h} en una grilla.
-type px [4]float64
-
-func pix(dst *ebiten.Image, ox, oy, scale float64, rs []px, c color.Color) {
-	for _, r := range rs {
-		rect(dst, ox+r[0]*scale, oy+r[1]*scale, r[2]*scale, r[3]*scale, c)
-	}
-}
-
-var (
-	icBack  = []px{{4, 1, 1, 1}, {3, 2, 1, 1}, {2, 3, 1, 2}, {3, 5, 1, 1}, {4, 6, 1, 1}}
-	icSpk   = []px{{1, 3, 1, 2}, {2, 2, 1, 4}, {3, 1, 1, 6}}
-	icWaves = []px{{5, 2, 1, 1}, {6, 3, 1, 2}, {5, 5, 1, 1}}
-	icPos   = []px{{0, 0, 8, 1}, {0, 7, 8, 1}, {0, 1, 1, 6}, {7, 1, 1, 6}, {4, 4, 3, 3}}
-	icClose = []px{{1, 1, 1, 1}, {2, 2, 1, 1}, {3, 3, 2, 2}, {5, 2, 1, 1}, {6, 1, 1, 1}, {2, 5, 1, 1}, {1, 6, 1, 1}, {5, 5, 1, 1}, {6, 6, 1, 1}}
-)
-
-// ---------- configuración guardada (sonido, tamaño, posición) ----------
+// ---------- configuración guardada (personaje, sonido, tamaño, posición) ----------
 
 type Config struct {
+	Av     Avatar
+	HasAv  bool
 	Mute   bool
 	Scale  int // índice en winSizes
 	Spot   int // 0 abajo-derecha, 1 abajo-centro, 2 abajo-izquierda
@@ -112,7 +37,7 @@ func cfgPath() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(d, "MiniJuegos", "config.json")
+	return filepath.Join(d, "Idle", "config.json")
 }
 
 func loadCfg() Config {
@@ -123,6 +48,10 @@ func loadCfg() Config {
 	if c.Scale < 0 || c.Scale >= len(winSizes) {
 		c.Scale = 0
 	}
+	if !c.HasAv {
+		c.Av, c.HasAv = randomAvatar(), true
+	}
+	c.Av = c.Av.fix()
 	return c
 }
 
@@ -146,6 +75,7 @@ const (
 	SHost
 	SJoin
 	SGame
+	SProfile
 )
 
 type Mode int
@@ -173,6 +103,10 @@ type App struct {
 	sel   int
 	tick  int
 	quit  bool
+
+	// tecla de pánico (Tab): tapa todo con un "monitor del sistema"
+	panic   bool
+	cpuHist []float64
 
 	// juego
 	mode                         Mode
@@ -206,8 +140,13 @@ type App struct {
 
 func NewApp() *App {
 	a := &App{cfg: loadCfg(), snd: NewSound(), upd: &Updater{}}
-	go a.upd.Check()
 	a.snd.Mute = a.cfg.Mute
+	a.cpuHist = make([]float64, 36)
+	for i := range a.cpuHist {
+		a.cpuHist[i] = 8 + rand.Float64()*14
+	}
+	a.saveCfg()
+	go a.upd.Check()
 	return a
 }
 
@@ -221,7 +160,7 @@ func (a *App) back() {
 		a.nw.Close()
 		a.nw, a.pong = nil, nil
 		a.go_(SPong)
-	case SPong:
+	case SPong, SProfile:
 		a.go_(SMenu)
 	}
 }
@@ -341,31 +280,69 @@ func (a *App) resize(d int) {
 
 func (a *App) topButtons() []btn {
 	bs := []btn{}
-	if a.scene != SMenu {
+	if a.scene != SMenu && !a.panic {
 		bs = append(bs, btn{4, 4, 12, 12, "back"})
 	}
 	return append(bs, btn{196, 4, 12, 12, "mute"}, btn{210, 4, 12, 12, "pos"}, btn{224, 4, 12, 12, "close"})
 }
 
-var modeItems = []struct {
-	id, title, sub string
-	c              color.NRGBA
+var menuRows = []struct {
+	id, label string
+	on        bool
 }{
-	{"local", "MISMO PC", "W/S CONTRA FLECHAS", colP1},
-	{"cpu", "VS CPU", "PRACTICA SOLO", colBall},
-	{"host", "CREAR SALA", "TE DA UN CODIGO", colP1},
-	{"join", "UNIRSE", "ESCRIBES EL CODIGO", colP2},
+	{"pong", "PONG", true},
+	{"", "SNAKE", false},
+	{"", "GATO", false},
+	{"", "HOCKEY", false},
+	{"perfil", "PERSONAJE", true},
+}
+
+var menuSel = []int{0, 4} // filas que se pueden elegir con el teclado
+
+func menuBtn(i int) btn {
+	y := 44 + float64(i)*22
+	if i == 4 {
+		y += 12
+	}
+	return btn{84, y, 148, 20, menuRows[i].id}
+}
+
+func profBtn(r, d int) btn {
+	x := 104.0
+	if d > 0 {
+		x = 220
+	}
+	return btn{x, 104 + float64(r)*20 - 2, 12, 12, "pf:" + string(rune('0'+r)) + ":" + map[int]string{-1: "-1", 1: "1"}[d]}
+}
+
+var modeItems = []struct{ id, title, sub string }{
+	{"local", "MISMO PC", "W/S CONTRA FLECHAS"},
+	{"cpu", "VS CPU", "PRACTICA SOLO"},
+	{"host", "CREAR SALA", "TE DA UN CODIGO"},
+	{"join", "UNIRSE", "ESCRIBES EL CODIGO"},
 }
 
 func (a *App) buttons() []btn {
 	bs := a.topButtons()
+	if a.panic {
+		return bs
+	}
 	switch a.scene {
 	case SMenu:
-		bs = append(bs, btn{8, 52, 108, 86, "pong"})
+		for i, r := range menuRows {
+			if r.on {
+				bs = append(bs, menuBtn(i))
+			}
+		}
 	case SPong:
 		for i, m := range modeItems {
-			bs = append(bs, btn{10, 36 + float64(i)*46, 220, 40, m.id})
+			bs = append(bs, btn{10, 38 + float64(i)*44, 220, 38, m.id})
 		}
+	case SProfile:
+		for r := 0; r < 4; r++ {
+			bs = append(bs, profBtn(r, -1), profBtn(r, 1))
+		}
+		bs = append(bs, btn{4, 180, W - 8, 18, "pfname"})
 	case SJoin:
 		if a.nw != nil {
 			for i, r := range a.nw.Rooms() {
@@ -377,6 +354,24 @@ func (a *App) buttons() []btn {
 		bs = append(bs, btn{168, 42, 42, 30, "ipok"})
 	}
 	return bs
+}
+
+func wrap(v uint8, d, n int) uint8 { return uint8(((int(v)+d)%n + n) % n) }
+
+func (a *App) profChange(r, d int) {
+	av := &a.cfg.Av
+	switch r {
+	case 0:
+		av.Body = wrap(av.Body, d, len(bodies))
+	case 1:
+		av.Color = wrap(av.Color, d, len(avColors))
+	case 2:
+		av.Eyes = wrap(av.Eyes, d, len(eyeNames))
+	case 3:
+		av.Hat = wrap(av.Hat, d, len(hats))
+	}
+	a.sel = r
+	a.saveCfg()
 }
 
 func (a *App) click(id string) {
@@ -393,6 +388,16 @@ func (a *App) click(id string) {
 		a.quit = true
 	case id == "pong":
 		a.go_(SPong)
+	case id == "perfil":
+		a.go_(SProfile)
+	case id == "pfname":
+		a.sel = 4
+	case strings.HasPrefix(id, "pf:"):
+		d := 1
+		if strings.HasSuffix(id, ":-1") {
+			d = -1
+		}
+		a.profChange(int(id[3]-'0'), d)
 	case id == "local":
 		a.startGame(ModeLocal)
 	case id == "cpu":
@@ -448,12 +453,21 @@ func (a *App) Update() error {
 	if cmd && pressed(ebiten.KeyQ, ebiten.KeyW) {
 		a.quit = true
 	}
-	if pressed(ebiten.KeyEscape) {
-		a.back()
+	if pressed(ebiten.KeyTab) {
+		a.panic = !a.panic
 	}
-	typing := a.scene == SJoin
-	if !typing && pressed(ebiten.KeyM) {
-		a.click("mute")
+	if a.tick%20 == 0 { // el gráfico falso de CPU se mueve solo
+		v := clamp(a.cpuHist[len(a.cpuHist)-1]+(rand.Float64()-.5)*8, 4, 38)
+		a.cpuHist = append(a.cpuHist[1:], v)
+	}
+	typing := a.scene == SJoin || (a.scene == SProfile && a.sel == 4)
+	if !a.panic {
+		if pressed(ebiten.KeyEscape) {
+			a.back()
+		}
+		if !typing && pressed(ebiten.KeyM) {
+			a.click("mute")
+		}
 	}
 	if pressed(ebiten.KeyEqual, ebiten.KeyNumpadAdd) {
 		a.resize(1)
@@ -493,38 +507,49 @@ func (a *App) Update() error {
 		}
 	}
 
-	switch a.scene {
-	case SMenu:
-		if pressed(ebiten.KeyEnter, ebiten.KeySpace) {
-			a.go_(SPong)
+	if a.panic {
+		if a.scene == SGame {
+			a.updateGame() // la partida sigue conectada, pero en pausa
 		}
-	case SPong:
-		if pressed(ebiten.KeyArrowDown, ebiten.KeyS) {
-			a.sel = (a.sel + 1) % len(modeItems)
-		}
-		if pressed(ebiten.KeyArrowUp, ebiten.KeyW) {
-			a.sel = (a.sel + len(modeItems) - 1) % len(modeItems)
-		}
-		for i, k := range []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3, ebiten.Key4} {
-			if pressed(k) {
-				a.click(modeItems[i].id)
+	} else {
+		switch a.scene {
+		case SMenu:
+			if pressed(ebiten.KeyArrowDown, ebiten.KeyS, ebiten.KeyArrowUp, ebiten.KeyW) {
+				a.sel = (a.sel + 1) % len(menuSel)
 			}
+			if pressed(ebiten.KeyEnter, ebiten.KeySpace) {
+				a.click(menuRows[menuSel[a.sel%len(menuSel)]].id)
+			}
+		case SPong:
+			if pressed(ebiten.KeyArrowDown, ebiten.KeyS) {
+				a.sel = (a.sel + 1) % len(modeItems)
+			}
+			if pressed(ebiten.KeyArrowUp, ebiten.KeyW) {
+				a.sel = (a.sel + len(modeItems) - 1) % len(modeItems)
+			}
+			for i, k := range []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3, ebiten.Key4} {
+				if pressed(k) {
+					a.click(modeItems[i].id)
+				}
+			}
+			if pressed(ebiten.KeyEnter, ebiten.KeySpace) {
+				a.click(modeItems[a.sel].id)
+			}
+		case SProfile:
+			a.updateProfile()
+		case SHost:
+			if a.nw != nil && a.nw.Connected() {
+				a.startGame(ModeHost)
+			}
+		case SJoin:
+			a.updateJoin()
+		case SGame:
+			a.updateGame()
 		}
-		if pressed(ebiten.KeyEnter, ebiten.KeySpace) {
-			a.click(modeItems[a.sel].id)
-		}
-	case SHost:
-		if a.nw != nil && a.nw.Connected() {
-			a.startGame(ModeHost)
-		}
-	case SJoin:
-		a.updateJoin()
-	case SGame:
-		a.updateGame()
 	}
 
 	a.lastCX, a.lastCY = a.cx, a.cy
-	if st, _ := a.upd.Status(); st == "listo" && (a.scene == SMenu || a.scene == SPong) {
+	if st, _ := a.upd.Status(); st == "listo" && !a.panic && (a.scene == SMenu || a.scene == SPong || a.scene == SProfile) {
 		if a.updAt == 0 {
 			a.updAt = a.tick + 90 // se muestra el aviso un momento y se reinicia
 		} else if a.tick >= a.updAt && a.upd.Apply() {
@@ -543,10 +568,43 @@ func (a *App) inDragZone() bool {
 	if a.cx < 0 || a.cy < 0 || a.cx >= W || a.cy >= H {
 		return false
 	}
-	if a.scene == SGame {
+	if a.scene == SGame && !a.panic {
 		return a.cy < 16 && a.cx > 20 && a.cx < 190
 	}
 	return true // en los menús se arrastra desde cualquier parte que no sea un botón
+}
+
+func (a *App) updateProfile() {
+	if pressed(ebiten.KeyArrowDown) {
+		a.sel = (a.sel + 1) % len(profLabels)
+	}
+	if pressed(ebiten.KeyArrowUp) {
+		a.sel = (a.sel + len(profLabels) - 1) % len(profLabels)
+	}
+	if a.sel < 4 {
+		if pressed(ebiten.KeyArrowLeft) {
+			a.profChange(a.sel, -1)
+		}
+		if pressed(ebiten.KeyArrowRight) {
+			a.profChange(a.sel, 1)
+		}
+		return
+	}
+	changed := false
+	for _, r := range ebiten.AppendInputChars(nil) {
+		if n := cleanName(a.cfg.Av.Name + string(r)); n != a.cfg.Av.Name {
+			a.cfg.Av.Name, changed = n, true
+		}
+	}
+	if pressed(ebiten.KeyBackspace) && a.cfg.Av.Name != "" {
+		a.cfg.Av.Name, changed = a.cfg.Av.Name[:len(a.cfg.Av.Name)-1], true
+	}
+	if pressed(ebiten.KeyEnter) {
+		a.sel = 0
+	}
+	if changed {
+		a.saveCfg()
+	}
 }
 
 func (a *App) updateJoin() {
@@ -609,6 +667,9 @@ func (a *App) updateJoin() {
 
 func (a *App) myInput(side int) Input {
 	var in Input
+	if a.panic {
+		return in
+	}
 	if a.mode == ModeLocal {
 		if side == 1 {
 			in.Dir = keyDir(ebiten.KeyW, ebiten.KeyS)
@@ -629,7 +690,7 @@ func (a *App) updatePointer() {
 	if pressed(ebiten.KeyW, ebiten.KeyS, ebiten.KeyArrowUp, ebiten.KeyArrowDown) {
 		a.ptrActive = false
 	}
-	if a.dragging {
+	if a.dragging || a.panic {
 		return
 	}
 	if a.mode == ModeLocal { // mismo PC: solo arrastrando; cada mitad mueve su paleta
@@ -653,30 +714,37 @@ func (a *App) updateGame() {
 	p := a.pong
 	a.updatePointer()
 
-	act := pressed(ebiten.KeySpace, ebiten.KeyEnter) ||
-		(inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) && a.cy > 16 && (p.Ph == PhOver || p.Paused))
-	if pressed(ebiten.KeyP) && (a.mode == ModeLocal || a.mode == ModeCPU) && p.Ph != PhOver {
+	act := !a.panic && (pressed(ebiten.KeySpace, ebiten.KeyEnter) ||
+		(inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) && a.cy > 16 && (p.Ph == PhOver || p.Paused)))
+	if !a.panic && pressed(ebiten.KeyP) && (a.mode == ModeLocal || a.mode == ModeCPU) && p.Ph != PhOver {
 		p.Paused = !p.Paused
 	} else if act {
 		switch {
-		case p.Paused:
+		case p.Paused && (a.mode == ModeLocal || a.mode == ModeCPU):
 			p.Paused = false
 		case p.Ph == PhDC:
 			a.back()
 			return
 		case p.Ph == PhOver && a.mode == ModeGuest:
 			a.rematch++
-		case p.Ph == PhOver:
+		case p.Ph == PhOver && a.mode != ModeGuest:
 			p.Reset()
 		}
 	}
+	var panicFlag uint8
+	if a.panic {
+		panicFlag = 1
+	}
 
 	switch a.mode {
-	case ModeLocal:
-		in2 := a.myInput(2)
-		p.Step(a.myInput(1), &in2, Dt)
-	case ModeCPU:
+	case ModeLocal, ModeCPU:
+		if a.panic {
+			p.Paused = true // al volver queda en pausa: P o Espacio para seguir
+		}
 		in2 := p.CPUInput()
+		if a.mode == ModeLocal {
+			in2 = a.myInput(2)
+		}
 		p.Step(a.myInput(1), &in2, Dt)
 	case ModeHost:
 		if b, rm, ok := a.nw.GuestPaddle(); ok {
@@ -691,19 +759,24 @@ func (a *App) updateGame() {
 		if a.nw.Lost() {
 			p.Ph = PhDC
 		}
+		p.Paused = a.panic || a.nw.GuestPanic() // si alguno se esconde, se pausa para los dos
+		if p.Paused {
+			panicFlag = 1
+		}
 		p.Step(a.myInput(1), nil, Dt)
-		a.nw.SendState(p)
+		a.nw.SendState(p, panicFlag)
 	case ModeGuest:
 		if st, ok := a.nw.State(); ok {
 			if st.Seq != a.lastSeq || !a.evReady { // paquete nuevo del anfitrión
 				a.lastSeq = st.Seq
 				p.X, p.Y, p.VX, p.VY, p.Tm = float64(st.X), float64(st.Y), float64(st.VX), float64(st.VY), float64(st.Tm)
 				p.S1, p.S2, p.Ph, p.Winner, p.Ev = int(st.S1), int(st.S2), st.Ph, int(st.Winner), st.Ev
+				p.Paused = st.Flags&1 != 0
 				a.targetA = float64(st.A)
 				if !a.evReady {
 					a.lastEv, a.evReady, p.A = p.Ev, true, a.targetA
 				}
-			} else if p.Ph == PhPlay { // entre paquetes: la bola sigue su camino (se ve fluido aunque haya demora)
+			} else if p.Ph == PhPlay && !p.Paused { // entre paquetes: la bola sigue su camino
 				p.X = clamp(p.X+p.VX*Dt, PX+PW, W-PX-PW-BS)
 				p.Y += p.VY * Dt
 				if p.Y < 0 || p.Y > H-BS {
@@ -716,14 +789,19 @@ func (a *App) updateGame() {
 			p.Ph = PhDC
 		}
 		if p.Ph != PhDC {
-			p.B = movePaddle(p.B, a.myInput(2), Dt) // mi paleta la muevo yo: se siente instantánea
-			a.nw.SendInput(p.B, a.rematch)
+			if !p.Paused {
+				p.B = movePaddle(p.B, a.myInput(2), Dt) // mi paleta la muevo yo: se siente instantánea
+			}
+			a.nw.SendInput(p.B, a.rematch, panicFlag)
 		}
+	}
+	if (a.mode == ModeHost || a.mode == ModeGuest) && a.tick%20 == 0 {
+		a.nw.SendAvatar(a.cfg.Av)
 	}
 
 	// sonidos y efectos de lo que pasó
 	for i := 0; i < EvCount; i++ {
-		if p.Ev[i] != a.lastEv[i] {
+		if p.Ev[i] != a.lastEv[i] && !a.panic {
 			a.snd.Play(i)
 			switch i {
 			case EvPoint:
@@ -737,202 +815,18 @@ func (a *App) updateGame() {
 	}
 	a.lastEv = p.Ev
 
-	if p.Ph == PhPlay {
+	if p.Ph == PhPlay && !p.Paused {
 		a.trail = append(a.trail, [2]float64{p.X, p.Y})
 		if len(a.trail) > 7 {
 			a.trail = a.trail[1:]
 		}
-	} else {
+	} else if !p.Paused {
 		a.trail = a.trail[:0]
 	}
 	a.shake = math.Max(0, a.shake-Dt)
 	a.flash = math.Max(0, a.flash-Dt*2)
 	a.pulse1 = math.Max(0, a.pulse1-Dt*4)
 	a.pulse2 = math.Max(0, a.pulse2-Dt*4)
-}
-
-// ---------- Draw ----------
-
-func (a *App) Layout(int, int) (int, int) { return W, H }
-
-func (a *App) Draw(s *ebiten.Image) {
-	if a.scene == SGame {
-		a.drawGame(s)
-	} else {
-		s.Fill(colPanel)
-		switch a.scene {
-		case SMenu:
-			a.drawMenu(s)
-		case SPong:
-			a.drawModes(s)
-		case SHost:
-			a.drawHost(s)
-		case SJoin:
-			a.drawJoin(s)
-		}
-		a.drawTopBar(s)
-		a.drawUpdate(s)
-	}
-	frame(s, 0, 0, W, H, colLine) // borde para que se vea el contorno de la ventana
-	shot(s, a.tick)
-}
-
-func (a *App) drawUpdate(s *ebiten.Image) {
-	st, v := a.upd.Status()
-	msg := ""
-	switch st {
-	case "descargando":
-		msg = "BAJANDO V" + v + dots(a.tick)
-	case "listo":
-		msg = "ACTUALIZANDO A V" + v
-	}
-	if msg == "" {
-		if a.scene == SMenu {
-			txt(s, "V"+version, W-6, H-11, 8, colLine, 1)
-		}
-		return
-	}
-	rect(s, 0, H-14, W, 14, colBg)
-	rect(s, 0, H-15, W, 1, colLine)
-	txt(s, msg, W/2, H-11, 8, colOk, 0)
-}
-
-func (a *App) hov(b btn) bool { return b.has(a.cx, a.cy) && !a.dragging }
-
-func (a *App) drawTopBar(s *ebiten.Image) {
-	rect(s, 0, 0, W, 20, colBg)
-	rect(s, 0, 20, W, 1, colLine)
-	title := map[Scene]string{SMenu: "", SPong: "PONG", SHost: "CREAR SALA", SJoin: "UNIRSE"}[a.scene]
-	cx := 100.0
-	if a.scene != SMenu {
-		cx = 106
-	}
-	txt(s, title, cx, 6, 8, colInk, 0)
-	for _, b := range a.topButtons() {
-		a.drawIconBtn(s, b, 1)
-	}
-}
-
-func (a *App) drawIconBtn(s *ebiten.Image, b btn, alpha float64) {
-	h := a.hov(b)
-	c := colInk
-	if h {
-		c, alpha = colP1, 1
-	}
-	rect(s, b.x, b.y, b.w, b.h, fade(colBg, alpha*.8))
-	frame(s, b.x, b.y, b.w, b.h, fade(map[bool]color.NRGBA{false: colLine, true: colP1}[h], alpha))
-	ox, oy := b.x+2, b.y+2
-	switch b.id {
-	case "back":
-		pix(s, ox, oy, 1, icBack, fade(c, alpha))
-	case "mute":
-		if a.snd.Mute {
-			pix(s, ox, oy, 1, icSpk, fade(colDim, alpha))
-		} else {
-			pix(s, ox, oy, 1, icSpk, fade(c, alpha))
-			pix(s, ox, oy, 1, icWaves, fade(c, alpha))
-		}
-	case "pos":
-		pix(s, ox, oy, 1, icPos, fade(c, alpha))
-	case "close":
-		pix(s, ox, oy, 1, icClose, fade(c, alpha))
-	}
-}
-
-func card(s *ebiten.Image, b btn, active bool) {
-	if active {
-		rect(s, b.x+1, b.y+1, b.w, b.h, colLine)
-		b.x, b.y = b.x-1, b.y-1
-	}
-	rect(s, b.x, b.y, b.w, b.h, colCard)
-	c := colLine
-	if active {
-		c = colP1
-	}
-	frame(s, b.x, b.y, b.w, b.h, c)
-	frame(s, b.x+1, b.y+1, b.w-2, b.h-2, c)
-}
-
-func (a *App) drawMenu(s *ebiten.Image) {
-	txt(s, "MINI", 72, 30, 16, colP1, 0)
-	txt(s, "JUEGOS", 168, 30, 16, colP2, 0)
-	tiles := []struct {
-		name, name2 string
-		icon        func(*ebiten.Image, float64, float64)
-		on          bool
-	}{
-		{"PONG", "", iconPong, true},
-		{"SNAKE", "DUELO", iconSnake, false},
-		{"TRES EN", "RAYA", iconTTT, false},
-		{"AIR", "HOCKEY", iconHockey, false},
-	}
-	for i, t := range tiles {
-		b := btn{8 + float64(i%2)*116, 52 + float64(i/2)*94, 108, 86, ""}
-		active := t.on && (a.hov(b) || a.tick < 0)
-		card(s, b, active)
-		ox, oy := b.x, b.y
-		if active {
-			ox, oy = ox-1, oy-1
-		}
-		t.icon(s, ox+38, oy+10)
-		txt(s, t.name, ox+54, oy+48, 8, colInk, 0)
-		if t.name2 != "" {
-			txt(s, t.name2, ox+54, oy+58, 8, colInk, 0)
-		}
-		tag, tc := "JUGAR", colOk
-		if !t.on {
-			tag, tc = "PRONTO", colDim
-		}
-		txt(s, tag, ox+54, oy+72, 8, tc, 0)
-		if !t.on {
-			rect(s, b.x, b.y, b.w, b.h, fade(colPanel, .55))
-		}
-	}
-}
-
-func iconPong(s *ebiten.Image, x, y float64) {
-	pix(s, x, y, 2, []px{{2, 3, 2, 6}}, colP1)
-	pix(s, x, y, 2, []px{{12, 7, 2, 6}}, colP2)
-	pix(s, x, y, 2, []px{{7, 7, 2, 2}}, colBall)
-	pix(s, x, y, 2, []px{{5, 9, 1, 1}}, fade(colBall, .5))
-	pix(s, x, y, 2, []px{{3.5, 10.5, 1, 1}}, fade(colBall, .25))
-}
-func iconSnake(s *ebiten.Image, x, y float64) {
-	pix(s, x, y, 2, []px{{2, 3, 6, 2}, {6, 5, 2, 4}, {6, 9, 6, 2}}, colOk)
-	pix(s, x, y, 2, []px{{12, 3, 2, 2}}, colP2)
-}
-func iconTTT(s *ebiten.Image, x, y float64) {
-	pix(s, x, y, 2, []px{{5, 1, 1, 14}, {10, 1, 1, 14}, {1, 5, 14, 1}, {1, 10, 14, 1}}, colLine)
-	pix(s, x, y, 2, []px{{2, 2, 2, 2}, {12, 12, 2, 2}}, colP1)
-	pix(s, x, y, 2, []px{{7, 7, 2, 2}}, colP2)
-}
-func iconHockey(s *ebiten.Image, x, y float64) {
-	pix(s, x, y, 2, []px{{1, 7, 14, 1}}, colLine)
-	pix(s, x, y, 2, []px{{6, 1, 4, 3}}, colP1)
-	pix(s, x, y, 2, []px{{6, 12, 4, 3}}, colP2)
-	pix(s, x, y, 2, []px{{9, 8, 2, 2}}, colBall)
-}
-
-func (a *App) drawModes(s *ebiten.Image) {
-	txt(s, "PRIMERO A 7 GANA", W/2, 24, 8, colDim, 0)
-	for i, m := range modeItems {
-		b := btn{10, 36 + float64(i)*46, 220, 40, m.id}
-		active := a.hov(b) || (a.sel == i && !a.hoverAny())
-		card(s, b, active)
-		ox, oy := b.x, b.y
-		if active {
-			ox, oy = ox-1, oy-1
-		}
-		if m.id == "local" {
-			rect(s, ox+10, oy+12, 4, 8, colP1)
-			rect(s, ox+14, oy+12, 4, 8, colP2)
-		} else {
-			rect(s, ox+10, oy+12, 8, 8, m.c)
-		}
-		txt(s, m.title, ox+28, oy+10, 8, colInk, -1)
-		txt(s, m.sub, ox+28, oy+24, 8, colDim, -1)
-	}
-	txt(s, "ESC VOLVER  +/- ZOOM", W/2, 226, 8, colDim, 0)
 }
 
 func (a *App) hoverAny() bool {
@@ -944,226 +838,16 @@ func (a *App) hoverAny() bool {
 	return false
 }
 
-func dots(t int) string { return strings.Repeat(".", (t/18)%4) }
-
-func (a *App) drawHost(s *ebiten.Image) {
-	txt(s, "TU CODIGO", W/2, 32, 8, colDim, 0)
-	rect(s, 60, 46, 120, 36, colBg)
-	frame(s, 60, 46, 120, 36, colLine)
-	code := "...."
-	st := NetConnecting
-	if a.nw != nil {
-		code, st = a.nw.Code, a.nw.RTCStatus()
-	}
-	if st == NetConnecting {
-		code = "...."
-	}
-	txt(s, strings.Join(strings.Split(code, ""), " "), W/2+1, 56, 16, colBall, 0)
-	txt(s, "DISELO A TU AMIGO", W/2, 94, 8, colInk, 0)
-	txt(s, "ESPERANDO"+dots(a.tick), 84, 116, 8, colDim, -1)
-
-	switch st {
-	case NetOnline:
-		txt(s, "INTERNET OK", W/2, 146, 8, colOk, 0)
-	case NetNoInternet:
-		txt(s, "SIN INTERNET:", W/2, 140, 8, colP2, 0)
-		txt(s, "SOLO RED LOCAL", W/2, 152, 8, colP2, 0)
-	default:
-		txt(s, "CONECTANDO"+dots(a.tick), 80, 146, 8, colDim, -1)
-	}
-	txt(s, "EN EL OTRO PC:", W/2, 178, 8, colDim, 0)
-	txt(s, "PONG > UNIRSE", W/2, 192, 8, colInk, 0)
-	txt(s, "IP "+LocalIP(), W/2, 220, 8, colDim, 0)
-}
-
-func (a *App) drawJoin(s *ebiten.Image) {
-	txt(s, "ESCRIBE EL CODIGO", W/2, 30, 8, colDim, 0)
-	rect(s, 30, 42, 132, 30, colBg)
-	frame(s, 30, 42, 132, 30, colLine)
-	cur := ""
-	if (a.tick/30)%2 == 0 && a.joinStart.IsZero() {
-		cur = "_"
-	}
-	if len(a.ipInput) <= 4 && !strings.Contains(a.ipInput, ".") {
-		txt(s, strings.Join(strings.Split(a.ipInput+cur, ""), " "), 40, 50, 16, colBall, -1)
-	} else {
-		txt(s, a.ipInput+cur, 36, 54, 8, colBall, -1)
-	}
-	ok := btn{168, 42, 42, 30, "ipok"}
-	c := colLine
-	if a.hov(ok) {
-		c = colP1
-	}
-	rect(s, ok.x, ok.y, ok.w, ok.h, colCard)
-	frame(s, ok.x, ok.y, ok.w, ok.h, c)
-	txt(s, "OK", ok.x+21, ok.y+11, 8, colInk, 0)
-	if a.status != "" {
-		col, st := colDim, a.status
-		if a.statusErr {
-			col = colP2
-		} else {
-			if a.nw != nil && a.nw.Via() == "relay" {
-				st = "POR SERVIDOR"
-			}
-			st += dots(a.tick)
-		}
-		txt(s, st, W/2, 82, 8, col, 0)
-	}
-
-	txt(s, "O ELIGE UNA SALA CERCA:", W/2, 108, 8, colDim, 0)
-	rooms := a.nw.Rooms()
-	if len(rooms) == 0 {
-		txt(s, "BUSCANDO"+dots(a.tick), 84, 132, 8, colLine, -1)
-	}
-	for i, r := range rooms {
-		if i >= 3 {
-			break
-		}
-		b := btn{10, 120 + float64(i)*30, 220, 26, ""}
-		active := a.hov(b)
-		card(s, b, active)
-		ox, oy := b.x, b.y
-		if active {
-			ox, oy = ox-1, oy-1
-		}
-		rect(s, ox+8, oy+9, 8, 8, colP1)
-		txt(s, r.Name, ox+24, oy+9, 8, colInk, -1)
-		txt(s, r.Code, ox+212, oy+9, 8, colBall, 1)
-	}
-	txt(s, "(TAMBIEN SIRVE SU IP)", W/2, 222, 8, colLine, 0)
-}
-
-func glow(s *ebiten.Image, x, y, w, h float64, c color.NRGBA, pulse float64) {
-	rect(s, x-2, y-2, w+4, h+4, fade(c, .14+pulse*.25))
-	rect(s, x-4, y-4, w+8, h+8, fade(c, .07+pulse*.15))
-	rect(s, x, y, w, h, c)
-}
-
-func (a *App) drawGame(s *ebiten.Image) {
-	p := a.pong
-	s.Fill(colBg)
-	ox, oy := 0.0, 0.0
-	if a.shake > 0 {
-		ox, oy = math.Round((rand.Float64()-.5)*4), math.Round((rand.Float64()-.5)*4)
-	}
-	for y := 3.0; y < H; y += 10 {
-		rect(s, W/2-1+ox, y+oy, 2, 5, colField)
-	}
-	txt(s, strconv.Itoa(p.S1), W/2-22+ox, 12+oy, 16, colP1, 1)
-	txt(s, strconv.Itoa(p.S2), W/2+24+ox, 12+oy, 16, colP2, -1)
-
-	glow(s, PX+ox, math.Round(p.A)+oy, PW, PH, colP1, a.pulse1)
-	glow(s, W-PX-PW+ox, math.Round(p.B)+oy, PW, PH, colP2, a.pulse2)
-
-	if p.Ph == PhPlay {
-		for i, t := range a.trail {
-			al := float64(i+1) / float64(len(a.trail)) * .35
-			rect(s, math.Round(t[0]+1)+ox, math.Round(t[1]+1)+oy, BS-2, BS-2, fade(colBall, al))
-		}
-		glow(s, math.Round(p.X)+ox, math.Round(p.Y)+oy, BS, BS, colBall, 0)
-	} else if p.Ph == PhServe && (a.tick/7)%2 == 0 {
-		glow(s, W/2-2, H/2-2, BS, BS, colBall, 0)
-	}
-	if a.flash > 0 {
-		rect(s, 0, 0, W, H, fade(colInk, a.flash*.5))
-	}
-
-	veil := func() { rect(s, 0, 84, W, 72, fade(colBg, .75)) }
-	switch p.Ph {
-	case PhCount:
-		txt(s, strconv.Itoa(int(math.Max(1, math.Ceil(p.Tm)))), W/2+2, H/2-16, 32, colBall, 0)
-		l := map[Mode][2]string{ModeLocal: {"W / S", "FLECHAS"}, ModeCPU: {"TU", "CPU"}, ModeHost: {"TU", "AMIGO"}, ModeGuest: {"AMIGO", "TU"}}[a.mode]
-		txt(s, l[0], 18, H-22, 8, colP1, -1)
-		txt(s, l[1], W-18, H-22, 8, colP2, 1)
-	case PhOver:
-		t, c := a.winnerText()
-		veil()
-		txt(s, t, W/2, 100, 16, c, 0)
-		txt(s, fmt.Sprintf("%d - %d", p.S1, p.S2), W/2, 124, 8, colInk, 0)
-		txt(s, "ESPACIO = REVANCHA", W/2, 142, 8, colDim, 0)
-	case PhDC:
-		veil()
-		txt(s, "SE CORTO", W/2, 100, 16, colP2, 0)
-		txt(s, "LA CONEXION", W/2, 124, 8, colInk, 0)
-		txt(s, "ESPACIO = SALIR", W/2, 142, 8, colDim, 0)
-	}
-	if p.Paused {
-		veil()
-		txt(s, "PAUSA", W/2, 106, 16, colInk, 0)
-		txt(s, "P = SEGUIR", W/2, 132, 8, colDim, 0)
-	}
-	for _, b := range a.topButtons() {
-		a.drawIconBtn(s, b, .3)
-	}
-}
-
-func (a *App) winnerText() (string, color.NRGBA) {
-	w := a.pong.Winner
-	switch a.mode {
-	case ModeLocal:
-		if w == 1 {
-			return "GANA AZUL", colP1
-		}
-		return "GANA ROSA", colP2
-	case ModeCPU:
-		if w == 1 {
-			return "¡GANASTE!", colBall
-		}
-		return "GANA CPU", colP2
-	}
-	me := 1
-	if a.mode == ModeGuest {
-		me = 2
-	}
-	if w == me {
-		return "¡GANASTE!", colBall
-	}
-	return "PERDISTE", colP2
-}
-
-// ---------- ícono de la ventana ----------
-
-func appIcon(size int) image.Image {
-	out := image.NewNRGBA(image.Rect(0, 0, size, size))
-	k := size / 16
-	fill := func(x0, y0, w, h int, c color.NRGBA) {
-		for y := y0 * k; y < (y0+h)*k; y++ {
-			for x := x0 * k; x < (x0+w)*k; x++ {
-				out.SetNRGBA(x, y, c)
-			}
-		}
-	}
-	fill(0, 0, 16, 16, colBg)
-	fill(2, 3, 2, 6, colP1)
-	fill(12, 7, 2, 6, colP2)
-	fill(7, 7, 2, 2, colBall)
-	return out
-}
-
-// ---------- capturas para pruebas (MJ_SHOT_DIR) ----------
-
-var shotDir = os.Getenv("MJ_SHOT_DIR")
-
-func shot(s *ebiten.Image, tick int) {
-	if shotDir == "" || tick%30 != 0 {
-		return
-	}
-	img := image.NewNRGBA(image.Rect(0, 0, W, H))
-	s.ReadPixels(img.Pix)
-	f, err := os.Create(filepath.Join(shotDir, fmt.Sprintf("f%05d.png", tick)))
-	if err == nil {
-		png.Encode(f, img)
-		f.Close()
-	}
-}
-
 func main() {
 	a := NewApp()
 	if d := os.Getenv("MJ_DEMO"); d != "" { // para pruebas: arranca directo en una pantalla
 		a.click(d)
 	}
+	if os.Getenv("MJ_PANIC") != "" {
+		a.panic = true
+	}
 	sz := winSizes[a.cfg.Scale]
-	ebiten.SetWindowTitle("Mini Juegos")
+	ebiten.SetWindowTitle("Idle")
 	ebiten.SetWindowDecorated(false)
 	ebiten.SetWindowFloating(true)
 	ebiten.SetRunnableOnUnfocused(true)

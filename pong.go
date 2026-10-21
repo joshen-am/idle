@@ -12,7 +12,7 @@ const (
 	PW       = 4  // ancho paleta
 	PH       = 34 // alto paleta
 	BS       = 5  // tamaño bola
-	PX       = 10 // distancia de la paleta al borde
+	PX       = 18 // distancia de la paleta al borde (deja lugar al personaje)
 	WinScore = 7
 	PSpeed   = 175.0
 	MaxSpeed = 330.0

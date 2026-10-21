@@ -2,17 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key><string>Mini Juegos</string>
-	<key>CFBundleDisplayName</key><string>Mini Juegos</string>
-	<key>CFBundleIdentifier</key><string>com.minijuegos.app</string>
-	<key>CFBundleExecutable</key><string>minijuegos</string>
+	<key>CFBundleName</key><string>Idle</string>
+	<key>CFBundleDisplayName</key><string>Idle</string>
+	<key>CFBundleIdentifier</key><string>com.joshenam.idle</string>
+	<key>CFBundleExecutable</key><string>idle</string>
 	<key>CFBundleIconFile</key><string>icon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>@VER@</string>
 	<key>CFBundleVersion</key><string>@VER@</string>
 	<key>LSMinimumSystemVersion</key><string>12.0</string>
-	<key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+	<key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
 	<key>NSHighResolutionCapable</key><true/>
-	<key>NSLocalNetworkUsageDescription</key><string>Para encontrar a tu compañero y jugar en la misma red.</string>
+	<key>NSLocalNetworkUsageDescription</key><string>Para conectarse con otros equipos de la red local.</string>
 </dict>
 </plist>

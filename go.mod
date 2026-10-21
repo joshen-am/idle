@@ -1,4 +1,4 @@
-module minijuegos
+module idle
 
 go 1.25.0
 
