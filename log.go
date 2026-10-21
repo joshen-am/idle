@@ -20,6 +20,9 @@ func logPath() string {
 }
 
 func logf(format string, args ...any) {
+	if os.Getenv("MJ_LOG_STDOUT") != "" { // pruebas: ver el registro en la consola
+		fmt.Printf("%s %s\n", time.Now().Format("15:04:05.000"), fmt.Sprintf(format, args...))
+	}
 	p := logPath()
 	if p == "" {
 		return

@@ -1,0 +1,44 @@
+# Prueba de conexión por internet en Mac y Windows reales.
+name: nettest
+on:
+  workflow_dispatch:
+jobs:
+  same-machine:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        nodirect: ["", "1"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Conexión (MJ_NODIRECT=${{ matrix.nodirect }})
+        env:
+          MJ_REAL: "1"
+          MJ_NOSOUND: "1"
+          MJ_LOG_STDOUT: "1"
+          MJ_NODIRECT: ${{ matrix.nodirect }}
+        run: go test -run TestConexionReal -v -count=1 -timeout 5m .
+  cross-host:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Anfitrión en Mac
+        env: { MJ_REAL: "1", MJ_NOSOUND: "1", MJ_LOG_STDOUT: "1", MJ_ROLE: host, MJ_ROOM: "Q${{ github.run_number }}" }
+        run: go test -run TestConexionReal -v -count=1 -timeout 5m .
+  cross-guest:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Invitado en Windows
+        env: { MJ_REAL: "1", MJ_NOSOUND: "1", MJ_LOG_STDOUT: "1", MJ_ROLE: guest, MJ_ROOM: "Q${{ github.run_number }}" }
+        run: go test -run TestConexionReal -v -count=1 -timeout 5m .
