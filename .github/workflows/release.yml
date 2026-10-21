@@ -1,0 +1,24 @@
+# Al subir una etiqueta vX.Y.Z se fabrican las apps y se publican como versión nueva.
+# Las apps instaladas la encuentran solas al abrirse y se actualizan.
+name: publicar versión
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Fabricar apps
+        run: ./build.sh "${GITHUB_REF_NAME#v}" "${{ github.repository }}"
+      - name: Publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/MiniJuegos-Mac.zip dist/MiniJuegos-Windows.zip
+          --title "Mini Juegos $GITHUB_REF_NAME" --notes "Se instala sola al abrir la app."
