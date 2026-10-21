@@ -2,6 +2,8 @@
 name: nettest
 on:
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   same-machine:
     strategy:
@@ -21,7 +23,18 @@ jobs:
           MJ_NOSOUND: "1"
           MJ_LOG_STDOUT: "1"
           MJ_NODIRECT: ${{ matrix.nodirect }}
-        run: go test -run TestConexionReal -v -count=1 -timeout 5m .
+        shell: bash
+        run: go test -run TestConexionReal -v -count=1 -timeout 5m . 2>&1 | tee out.txt; exit ${PIPESTATUS[0]}
+      - name: Guardar registro
+        if: always()
+        shell: bash
+        env:
+          JOBTAG: "${{ matrix.os }}-${{ matrix.nodirect }}"
+        run: |
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          B="logs/$JOBTAG"
+          git checkout -q --orphan "$B" && git rm -rqf --cached . >/dev/null
+          git add -f out.txt && git commit -qm "registro $JOBTAG" && git push -qf origin "HEAD:refs/heads/$B"
   cross-host:
     runs-on: macos-latest
     steps:
@@ -31,7 +44,18 @@ jobs:
           go-version-file: go.mod
       - name: Anfitrión en Mac
         env: { MJ_REAL: "1", MJ_NOSOUND: "1", MJ_LOG_STDOUT: "1", MJ_ROLE: host, MJ_ROOM: "Q${{ github.run_number }}" }
-        run: go test -run TestConexionReal -v -count=1 -timeout 5m .
+        shell: bash
+        run: go test -run TestConexionReal -v -count=1 -timeout 5m . 2>&1 | tee out.txt; exit ${PIPESTATUS[0]}
+      - name: Guardar registro
+        if: always()
+        shell: bash
+        env:
+          JOBTAG: "cross-host"
+        run: |
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          B="logs/$JOBTAG"
+          git checkout -q --orphan "$B" && git rm -rqf --cached . >/dev/null
+          git add -f out.txt && git commit -qm "registro $JOBTAG" && git push -qf origin "HEAD:refs/heads/$B"
   cross-guest:
     runs-on: windows-latest
     steps:
@@ -41,4 +65,16 @@ jobs:
           go-version-file: go.mod
       - name: Invitado en Windows
         env: { MJ_REAL: "1", MJ_NOSOUND: "1", MJ_LOG_STDOUT: "1", MJ_ROLE: guest, MJ_ROOM: "Q${{ github.run_number }}" }
-        run: go test -run TestConexionReal -v -count=1 -timeout 5m .
+        shell: bash
+        run: go test -run TestConexionReal -v -count=1 -timeout 5m . 2>&1 | tee out.txt; exit ${PIPESTATUS[0]}
+      - name: Guardar registro
+        if: always()
+        shell: bash
+        env:
+          JOBTAG: "cross-guest"
+        run: |
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          B="logs/$JOBTAG"
+          git checkout -q --orphan "$B" && git rm -rqf --cached . >/dev/null
+          git add -f out.txt && git commit -qm "registro $JOBTAG" && git push -qf origin "HEAD:refs/heads/$B"
+
