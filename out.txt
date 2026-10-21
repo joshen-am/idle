@@ -1,0 +1,24 @@
+=== RUN   TestConexionReal
+20:59:03.966 servidor: llega OPEN de  (15 bytes)
+20:59:03.981 servidor: respuesta OPEN (id idle-v1-s5jc)
+    net_test.go:37: sala creada: S5JC
+20:59:04.610 servidor: llega OPEN de  (15 bytes)
+20:59:04.615 servidor: respuesta OPEN (id idle-v1-g3ddf3c86076240bb)
+20:59:04.629 invitado: oferta enviada a idle-v1-s5jc
+20:59:04.807 servidor: llega OFFER de idle-v1-g3ddf3c86076240bb (770 bytes)
+20:59:04.808 rtc: estado connecting
+20:59:04.985 servidor: llega ANSWER de idle-v1-s5jc (699 bytes)
+20:59:04.985 invitado: respuesta recibida
+20:59:04.985 rtc: estado connecting
+20:59:11.645 relevo: activado hacia idle-v1-s5jc
+20:59:11.887 conectado por relevo
+20:59:11.888 relevo: activado hacia idle-v1-g3ddf3c86076240bb
+    net_test.go:78: invitado conectado por "relay"
+    net_test.go:103: anfitrión conectado por "relay"
+20:59:17.129 servidor: lectura cortada: failed to get reader: context canceled
+20:59:17.130 servidor: lectura cortada: failed to get reader: context canceled
+20:59:17.130 rtc: estado closed
+--- PASS: TestConexionReal (13.56s)
+20:59:17.130 rtc: estado closed
+PASS
+ok  	idle	13.622s
