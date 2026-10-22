@@ -16,6 +16,10 @@ type Config struct {
 	Mute   bool
 	HasCfg bool
 	Room   string // sala online: los dos entran a la misma y se encuentran solos
+	NoAnim bool   // mascota sin animaciones
+	HasPet bool
+	PetX   float64 // lugar de la mascota (fracción de la pantalla)
+	PetY   float64
 }
 
 func cfgPath() string {

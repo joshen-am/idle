@@ -50,7 +50,12 @@ func init() {
 	fontSrc = s
 }
 
+// drawOX, drawOY: corrimiento de todo lo que se dibuja. Las cosas se ubican en coordenadas de
+// la pantalla, pero la ventana a veces es solo un cuadrito alrededor de la mascota.
+var drawOX, drawOY float64
+
 func rect(dst *ebiten.Image, x, y, w, h float64, c color.Color) {
+	x, y = x+drawOX, y+drawOY
 	vector.FillRect(dst, float32(x), float32(y), float32(w), float32(h), c, false)
 }
 
@@ -64,7 +69,7 @@ func frame(dst *ebiten.Image, x, y, w, h float64, c color.Color) {
 // txt dibuja texto; align: -1 izquierda, 0 centro, 1 derecha.
 func txt(dst *ebiten.Image, s string, x, y, size float64, c color.Color, align int) {
 	op := &text.DrawOptions{}
-	op.GeoM.Translate(math.Round(x), math.Round(y))
+	op.GeoM.Translate(math.Round(x+drawOX), math.Round(y+drawOY))
 	op.ColorScale.ScaleWithColor(c)
 	op.PrimaryAlign = [...]text.Align{text.AlignStart, text.AlignCenter, text.AlignEnd}[align+1]
 	text.Draw(dst, s, &text.GoTextFace{Source: fontSrc, Size: size}, op)
@@ -110,7 +115,8 @@ func shot(s *ebiten.Image, tick int) {
 	}
 	img := image.NewRGBA(s.Bounds()) // ReadPixels entrega color premultiplicado, como image.RGBA
 	s.ReadPixels(img.Pix)
-	f, err := os.Create(filepath.Join(shotDir, fmt.Sprintf("f%05d.png", tick)))
+	// el nombre lleva dónde estaba la ventana, para armar la imagen de la pantalla completa
+	f, err := os.Create(filepath.Join(shotDir, fmt.Sprintf("f%05d_%d_%d.png", tick, int(-drawOX), int(-drawOY))))
 	if err == nil {
 		png.Encode(f, img)
 		f.Close()

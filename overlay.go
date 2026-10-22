@@ -8,33 +8,45 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
 
-// Idle sobre la pantalla: una ventana transparente del tamaño del monitor, siempre encima y que
-// deja pasar los clics a lo que haya debajo. Se maneja solo con el teclado (keys.go):
-//   - Modo trabajo: no se ve nada y las teclas van a tus apps.
-//   - Modo juego (↑+↓ dos veces): aparece un menú chico en la esquina o la partida.
+// Idle sobre la pantalla: una ventana transparente del tamaño del monitor, siempre encima, sin
+// ícono, que deja pasar los clics salvo cuando el mouse está sobre la mascota o su menú.
+//   - La mascota (pet.go) vive en una esquina. Clic: menú. Arrastrar: moverla o tirarla al
+//     basurero para cerrar Idle.
+//   - ↑+↓ dos veces (keys.go): modo juego (las teclas son del juego) / modo trabajo.
+//   - Para gastar poco: quieto se actualiza 10 veces por segundo; al jugar o arrastrar, 60.
 
 type Scene int
 
 const (
-	SceneMenu Scene = iota
+	SceneNone Scene = iota // solo la mascota
+	SceneMenu
 	SceneProfile
 	SceneSearch
 	SceneMatch
 )
 
-var menuItems = []string{"online", "cpu", "perfil", "sonido", "salir"}
+var menuItems = []string{"online", "cpu", "perfil", "anim", "sonido", "salir"}
 
 var profLabels = []string{"CUERPO", "COLOR", "OJOS", "GORRO", "NOMBRE", "SALA"}
+
+type btnArea struct {
+	x, y, w, h float64
+	id         string
+}
+
+func (b btnArea) has(x, y float64) bool { return x >= b.x && x < b.x+b.w && y >= b.y && y < b.y+b.h }
 
 type Overlay struct {
 	cfg    Config
 	snd    *Sound
 	upd    *Updater
+	pet    *Pet
 	scene  Scene
 	sel    int
 	tick   int
@@ -46,27 +58,120 @@ type Overlay struct {
 	script []scriptStep
 	relKey []Key
 	updAt  int
+
+	mx, my    float64 // mouse
+	down      bool    // botón izquierdo (en cualquier parte de la pantalla)
+	prevDown  bool
+	pressedIn bool // el clic empezó sobre un botón del panel
+	btns      []btnArea
+	panelR    btnArea
+	passOn    bool // los clics pasan a las apps
+	fast      bool
+	autoGame  bool // activé el modo juego yo (para escribir o jugar); se apaga al volver
+	prevGame  bool
+	focusAt   time.Time
+	startedAt time.Time
+	byeAt     time.Time
+	lastSig   string
+	sig       string
+	sigTick   int
+	winX      float64 // dónde está la ventana ahora (puede ser un cuadrito alrededor de la mascota)
+	winY      float64
+	winW      float64
+	winH      float64
+	redraws   int
+	dbgAt     time.Time
+	draws     int
+	dbg2      time.Time
+	dbgTick   int
 }
 
+var debugDraw = os.Getenv("MJ_DEBUGDRAW") != ""
+
 func NewOverlay() *Overlay {
-	o := &Overlay{cfg: loadCfg(), snd: NewSound(), upd: &Updater{}, script: loadScript()}
+	o := &Overlay{cfg: loadCfg(), snd: NewSound(), upd: &Updater{}, script: loadScript(), passOn: true,
+		startedAt: time.Now()}
 	o.snd.Mute = o.cfg.Mute
 	saveCfg(o.cfg)
 	go o.upd.Check()
 	return o
 }
 
-func (o *Overlay) Layout(ow, oh int) (int, int) {
-	o.sw, o.sh = ow, oh
-	return ow, oh
+// Layout: la ventana mide lo que mide (o.sw y o.sh son el tamaño de la pantalla).
+func (o *Overlay) Layout(ow, oh int) (int, int) { return ow, oh }
+
+// initPet pone la mascota en su lugar (o en la esquina de abajo a la derecha).
+func (o *Overlay) initPet() {
+	x, y := float64(o.sw)-80, float64(o.sh)-bottomMargin()
+	if o.cfg.HasPet {
+		x, y = o.cfg.PetX*float64(o.sw), o.cfg.PetY*float64(o.sh)
+	}
+	o.pet = NewPet(clamp(x, 40, float64(o.sw)-40), clamp(y, 70, float64(o.sh)-4))
 }
 
+// wantFull: ¿hace falta la ventana del tamaño de la pantalla? Si no, alcanza un cuadrito
+// alrededor de la mascota (pintar eso casi no cuesta).
+func (o *Overlay) wantFull() bool {
+	return o.scene != SceneNone || o.match != nil || o.pet.drag || o.pet.Dying() || !o.byeAt.IsZero()
+}
+
+const smallW, smallH = 260.0, 220.0
+
+// placeWindow agranda o achica la ventana según haga falta.
+func (o *Overlay) placeWindow() {
+	x, y, w, h := 0.0, 0.0, float64(o.sw), float64(o.sh)
+	if runtime.GOOS == "windows" {
+		h-- // si ocupa exacto el monitor, Windows la trata como pantalla completa y esconde la barra de tareas
+	}
+	if !o.wantFull() {
+		w, h = smallW, smallH
+		x = math.Round(clamp(o.pet.cx-w/2, 0, float64(o.sw)-w))
+		y = math.Round(clamp(o.pet.by-h+40, 0, float64(o.sh)-h))
+	}
+	if x != o.winX || y != o.winY || w != o.winW || h != o.winH {
+		if w < o.winW { // al achicar: primero el tamaño (así no tapa nada en el camino)
+			ebiten.SetWindowSize(int(w), int(h))
+			ebiten.SetWindowPosition(int(x), int(y))
+		} else {
+			ebiten.SetWindowPosition(int(x), int(y))
+			ebiten.SetWindowSize(int(w), int(h))
+		}
+		o.winX, o.winY, o.winW, o.winH = x, y, w, h
+		o.lastSig = "" // hay que pintar de nuevo
+	}
+}
+
+func bottomMargin() float64 {
+	switch runtime.GOOS {
+	case "darwin":
+		return 90 // sobre el Dock
+	case "windows":
+		return 54 // sobre la barra de tareas
+	}
+	return 40
+}
+
+func (o *Overlay) savePet() {
+	if o.sw > 0 {
+		o.cfg.PetX, o.cfg.PetY, o.cfg.HasPet = o.pet.cx/float64(o.sw), o.pet.by/float64(o.sh), true
+		saveCfg(o.cfg)
+	}
+}
+
+func (o *Overlay) trashPos() (float64, float64) { return float64(o.sw) / 2, float64(o.sh) - 120 }
+
 // ---------- acciones ----------
+
+func (o *Overlay) setGame(on bool) {
+	gin.SetGame(on)
+	o.prevGame = on
+}
 
 func (o *Overlay) startCPU() {
 	o.closeMatch()
 	o.match = NewMatch(ModeCPU, nil, o.cfg.Av, o.snd)
 	o.scene = SceneMatch
+	o.setGame(true) // las flechas pasan a ser del juego
 }
 
 func (o *Overlay) startOnline() {
@@ -84,7 +189,36 @@ func (o *Overlay) closeMatch() {
 		o.nw.Close()
 		o.nw = nil
 	}
-	o.scene, o.act = SceneMenu, false
+	if o.scene == SceneMatch || o.scene == SceneSearch {
+		o.setGame(false)
+	}
+	o.scene, o.act = SceneNone, false
+}
+
+func (o *Overlay) openMenu() {
+	o.scene, o.sel = SceneMenu, 0
+}
+
+func (o *Overlay) closePanel() {
+	if o.scene == SceneProfile {
+		if o.cfg.Room == "" {
+			o.cfg.Room = "IDLE"
+		}
+		saveCfg(o.cfg)
+	}
+	if o.autoGame {
+		o.setGame(false)
+		o.autoGame = false
+	}
+	o.scene = SceneNone
+}
+
+func (o *Overlay) openProfile() {
+	o.scene, o.sel = SceneProfile, 0
+	if _, game := gin.Peek(); !game { // para escribir el nombre, las teclas tienen que ser de Idle
+		o.setGame(true)
+		o.autoGame = true
+	}
 }
 
 func (o *Overlay) profChange(r, d int) {
@@ -102,15 +236,36 @@ func (o *Overlay) profChange(r, d int) {
 	saveCfg(o.cfg)
 }
 
-// handleKey: una tecla apretada en modo juego.
-func (o *Overlay) handleKey(k Key) {
-	if k == 'M' && o.scene != SceneProfile {
+func (o *Overlay) menuAction(id string) {
+	switch id {
+	case "online":
+		o.startOnline()
+	case "cpu":
+		o.startCPU()
+	case "perfil":
+		o.openProfile()
+	case "anim":
+		o.cfg.NoAnim = !o.cfg.NoAnim
+		saveCfg(o.cfg)
+	case "sonido":
 		o.snd.Mute = !o.snd.Mute
 		o.cfg.Mute = o.snd.Mute
 		saveCfg(o.cfg)
+	case "salir":
+		o.byeAt = time.Now()
+		o.scene = SceneNone
+	}
+}
+
+// handleKey: una tecla apretada en modo juego.
+func (o *Overlay) handleKey(k Key) {
+	if k == 'M' && o.scene != SceneProfile {
+		o.menuAction("sonido")
 		return
 	}
 	switch o.scene {
+	case SceneNone:
+		o.openMenu() // cualquier tecla en modo juego abre el menú de la mascota
 	case SceneMenu:
 		switch k {
 		case KUp:
@@ -118,20 +273,10 @@ func (o *Overlay) handleKey(k Key) {
 		case KDown:
 			o.sel = (o.sel + 1) % len(menuItems)
 		case KEnter, KSpace, KRight:
-			switch menuItems[o.sel] {
-			case "online":
-				o.startOnline()
-			case "cpu":
-				o.startCPU()
-			case "perfil":
-				o.scene, o.sel = SceneProfile, 0
-			case "sonido":
-				o.handleKey('M')
-			case "salir":
-				o.quit = true
-			}
+			o.menuAction(menuItems[o.sel])
 		case KEsc:
-			gin.SetGame(false) // atajo: Esc en el menú vuelve al trabajo
+			o.scene = SceneNone
+			o.setGame(false) // Esc en el menú vuelve al trabajo
 		}
 	case SceneProfile:
 		switch k {
@@ -144,11 +289,7 @@ func (o *Overlay) handleKey(k Key) {
 				o.profChange(o.sel, map[Key]int{KLeft: -1, KRight: 1}[k])
 			}
 		case KEnter, KEsc:
-			if o.cfg.Room == "" {
-				o.cfg.Room = "IDLE"
-			}
-			saveCfg(o.cfg)
-			o.scene, o.sel = SceneMenu, 2
+			o.closePanel()
 		case KBack:
 			if f := o.textField(); f != nil && *f != "" {
 				*f = (*f)[:len(*f)-1]
@@ -188,15 +329,86 @@ func (o *Overlay) textField() *string {
 
 func (o *Overlay) Update() error {
 	o.tick++
-	if gin.Status() == HookOff {
+	if o.pet == nil {
+		o.initPet()
+	}
+	if gin.Status() != HookOK {
 		pollWindowKeys()
 	}
 	o.runScript()
+	cx, cy := ebiten.CursorPosition()
+	o.mx, o.my = float64(cx)+o.winX, float64(cy)+o.winY // en coordenadas de la pantalla
+	o.prevDown, o.down = o.down, globalMouseDown()
+	if botMouse != nil {
+		o.mx, o.my, o.down = botMouse(o)
+	}
+	pressed, released := o.down && !o.prevDown, !o.down && o.prevDown
+
+	// teclado: el gesto ↑+↓ dos veces
 	keys, game := gin.Frame()
+	if game != o.prevGame {
+		o.prevGame = game
+		switch {
+		case game && o.scene == SceneNone:
+			o.openMenu() // entrar al modo juego sin partida: aparece el menú
+		case !game && (o.scene == SceneMenu || o.scene == SceneProfile):
+			o.scene, o.autoGame = SceneNone, false
+		}
+	}
 	for _, k := range keys {
 		o.handleKey(k)
 	}
 
+	// mouse en los paneles: elegir con un clic
+	inPanel := o.scene != SceneNone && o.scene != SceneMatch && o.panelR.has(o.mx, o.my)
+	if pressed {
+		o.pressedIn = inPanel
+	}
+	for i, b := range o.btns {
+		if b.has(o.mx, o.my) && o.scene == SceneMenu {
+			o.sel = i
+		}
+	}
+	if released && o.pressedIn {
+		for _, b := range o.btns {
+			if b.has(o.mx, o.my) {
+				o.clickButton(b.id)
+				break
+			}
+		}
+		o.pressedIn = false
+		o.afterClick()
+	} else if pressed && !inPanel && !o.pet.Hit(o.mx, o.my) && (o.scene == SceneMenu || o.scene == SceneProfile) {
+		o.closePanel() // clic afuera: se cierra el menú
+	}
+
+	// la mascota (escondida mientras se juega)
+	if o.scene != SceneMatch && o.byeAt.IsZero() {
+		tx, ty := o.trashPos()
+		click, rel, trashed := o.pet.Update(o.mx, o.my, o.down && !o.pressedIn, !o.cfg.NoAnim, float64(o.sw), float64(o.sh), tx, ty)
+		if click {
+			if o.scene == SceneMenu || o.scene == SceneProfile {
+				o.closePanel()
+			} else if o.scene == SceneNone {
+				o.openMenu()
+			}
+		}
+		if rel && !trashed && !click {
+			o.savePet()
+		}
+		if trashed {
+			o.byeAt = time.Now()
+			logf("mascota: al basurero, Idle se cierra")
+		}
+		if rel {
+			o.afterClick()
+		}
+	}
+	if !o.byeAt.IsZero() && time.Since(o.byeAt) > 1100*time.Millisecond {
+		o.quit = true
+	}
+
+	// partida
 	if o.scene == SceneSearch && o.nw != nil && o.nw.Connected() {
 		mode := ModeGuest
 		if o.nw.IsHost() {
@@ -204,6 +416,7 @@ func (o *Overlay) Update() error {
 		}
 		o.match, o.nw = NewMatch(mode, o.nw, o.cfg.Av, o.snd), nil
 		o.scene = SceneMatch
+		o.setGame(true)
 	}
 	if o.match != nil {
 		var in Input
@@ -225,19 +438,102 @@ func (o *Overlay) Update() error {
 		o.act = false
 	}
 
-	if st, _ := o.upd.Status(); st == "listo" && o.match == nil && o.nw == nil {
+	o.updateWindow()
+	o.placeWindow()
+
+	if st, _ := o.upd.Status(); st == "listo" && o.match == nil && o.nw == nil && o.scene == SceneNone && !o.pet.Busy() {
 		if o.updAt == 0 {
-			o.updAt = o.tick + 60
+			o.updAt = o.tick + 30
 		} else if o.tick >= o.updAt && o.upd.Apply() {
 			o.quit = true
 		}
 	}
 	if o.quit {
 		o.closeMatch()
+		if o.pet != nil && o.byeAt.IsZero() {
+			o.savePet()
+		}
 		saveCfg(o.cfg)
 		return ebiten.Termination
 	}
 	return nil
+}
+
+func (o *Overlay) clickButton(id string) {
+	switch {
+	case o.scene == SceneMenu:
+		o.menuAction(id)
+	case id == "listo":
+		o.closePanel()
+	case id == "cancelar":
+		o.closeMatch()
+	case len(id) == 6 && id[:3] == "pf:": // pf:R+ / pf:R-
+		r := int(id[3] - '0')
+		o.sel = r
+		if id[5] == '+' {
+			o.profChange(r, 1)
+		} else {
+			o.profChange(r, -1)
+		}
+	case len(id) == 4 && id[:3] == "pf:":
+		o.sel = int(id[3] - '0')
+	}
+}
+
+// afterClick: terminó un clic sobre Idle; el teclado vuelve a tu ventana (salvo que haga falta
+// para escribir y no haya teclado de sistema).
+func (o *Overlay) afterClick() {
+	if o.scene == SceneProfile && gin.Status() != HookOK {
+		return
+	}
+	restoreFocus()
+}
+
+// updateWindow decide si los clics pasan a las apps y cuán seguido se actualiza Idle.
+func (o *Overlay) updateWindow() {
+	near := math.Hypot(o.mx-o.pet.cx, o.my-(o.pet.by-6*o.pet.sc)) < 160
+	interactive := o.scene != SceneMatch && (o.pet.Hit(o.mx, o.my) || o.pet.pressed || o.pet.drag || o.pressedIn ||
+		(o.scene != SceneNone && o.panelR.has(o.mx, o.my)))
+	if pass := !interactive; pass != o.passOn {
+		o.passOn = pass
+		ebiten.SetWindowMousePassthrough(pass)
+	}
+	if o.passOn && time.Since(o.focusAt) > 500*time.Millisecond {
+		trackFocus() // recordar tu ventana activa, para devolverle el teclado
+		o.focusAt = time.Now()
+	}
+	moving := o.pet.act == "saltito" || o.pet.act == "estirar" || o.pet.act == "bostezo"
+	fast := o.scene != SceneNone || o.pet.pressed || o.pet.drag || o.pet.Dying() || near || moving ||
+		!o.byeAt.IsZero() || time.Since(o.pet.landAt) < time.Second || len(o.script) > 0 || botMouse != nil
+	if fast != o.fast {
+		o.fast = fast
+		if fast {
+			ebiten.SetTPS(60)
+		} else {
+			ebiten.SetTPS(10) // quieto: 10 veces por segundo alcanza
+		}
+	}
+}
+
+// signature resume todo lo que se ve cuando la mascota está quieta. Si no cambió desde el
+// último cuadro, no se vuelve a pintar (así casi no gasta: la pantalla queda como estaba).
+func (o *Overlay) signature() string {
+	p := o.pet
+	pose, dy := p.pose(o.mx, o.my, !o.cfg.NoAnim)
+	t := animTick()
+	breath, blink := (t/30)%2, t%200 < 7
+	if o.cfg.NoAnim {
+		breath, blink = 0, false
+	}
+	st, _ := o.upd.Status()
+	sig := fmt.Sprintf("%v|%d|%v|%.0f|%.0f|%.0f|%v|%d|%v|%s", pose, breath, blink, p.cx, p.by, dy, p.flip,
+		gin.Status(), time.Since(o.startedAt) < 7*time.Second, st)
+	now := time.Now()
+	for _, q := range p.parts { // las partículas se mueven de a saltos de 6 px para repintar menos
+		age := now.Sub(q.born).Seconds()
+		sig += fmt.Sprintf("|%s%.0f,%.0f,%.1f", q.s, (q.x+q.vx*age)/6, (q.y+q.vy*age)/6, math.Round(clamp(1-age/q.life, 0, 1)*4)/4)
+	}
+	return sig
 }
 
 // runScript ejecuta el guion de teclas de prueba (MJ_SCRIPT).
@@ -246,12 +542,15 @@ func (o *Overlay) runScript() {
 		gin.onKey(k, false, false)
 	}
 	o.relKey = nil
-	t := float64(o.tick) / 60
+	t := time.Since(o.startedAt).Seconds()
 	for len(o.script) > 0 && o.script[0].at <= t {
 		o.relKey = append(o.relKey, runScriptStep(o.script[0].what)...)
 		o.script = o.script[1:]
 	}
 }
+
+// botMouse: pruebas automáticas del mouse (ver mascota_test.go); nil en la app real.
+var botMouse func(o *Overlay) (float64, float64, bool)
 
 // ---------- dibujo ----------
 
@@ -261,6 +560,11 @@ var shadowCol = color.NRGBA{0, 0, 0, 110}
 func srect(dst *ebiten.Image, x, y, w, h float64, c color.Color) {
 	rect(dst, x+2, y+2, w, h, shadowCol)
 	rect(dst, x, y, w, h, c)
+}
+
+func stxt(dst *ebiten.Image, s string, x, y, size float64, c color.NRGBA, align int) {
+	txt(dst, s, x+2, y+2, size, color.NRGBA{0, 0, 0, uint8(float64(c.A) * .6)}, align)
+	txt(dst, s, x, y, size, c, align)
 }
 
 func textW(s string, size float64) float64 {
@@ -291,65 +595,139 @@ func ball(dst *ebiten.Image, x, y, w float64, c color.Color) {
 	rect(dst, x, y, w, w, c)
 }
 
-// panel: recuadro oscuro en la esquina inferior derecha. Devuelve su esquina superior izquierda.
+// panel: recuadro oscuro al lado de la mascota. Devuelve su esquina superior izquierda.
 func (o *Overlay) panel(dst *ebiten.Image, w, h float64) (float64, float64) {
-	x, y := float64(o.sw)-w-24, float64(o.sh)-h-24
+	p := o.pet
+	x := p.cx + 7*p.sc + 12
+	if p.cx > float64(o.sw)/2 { // si la mascota está a la derecha, el menú sale a su izquierda
+		x = p.cx - 7*p.sc - 12 - w
+	}
+	y := clamp(p.by-h, 16, float64(o.sh)-h-16)
+	x = clamp(x, 16, float64(o.sw)-w-16)
+	o.panelR = btnArea{x, y, w, h, ""}
 	rect(dst, x+3, y+3, w, h, shadowCol)
-	rect(dst, x, y, w, h, color.NRGBA{20, 20, 19, 225})
+	rect(dst, x, y, w, h, color.NRGBA{20, 20, 19, 230})
 	frame(dst, x, y, w, h, colLine)
 	return x, y
 }
 
+func (o *Overlay) button(id string, x, y, w, h float64) btnArea {
+	b := btnArea{x, y, w, h, id}
+	o.btns = append(o.btns, b)
+	return b
+}
+
 func (o *Overlay) Draw(s *ebiten.Image) {
+	if o.pet == nil {
+		return
+	}
+	if debugDraw {
+		o.draws++
+		if time.Since(o.dbg2) > 5*time.Second {
+			logf("motor: %.1f Draw/s %.1f Update/s rapido=%v anim=%v", float64(o.draws)/time.Since(o.dbg2).Seconds(), float64(o.tick-o.dbgTick)/time.Since(o.dbg2).Seconds(), o.fast, !o.cfg.NoAnim)
+			o.draws, o.dbg2, o.dbgTick = 0, time.Now(), o.tick
+		}
+	}
+	drawOX, drawOY = -o.winX, -o.winY
+	if !o.fast {
+		if o.sigTick != o.tick { // una vez por actualización (10 por segundo), no en cada cuadro
+			o.sig, o.sigTick = o.signature(), o.tick
+		}
+		if sig := o.sig; sig == o.lastSig {
+			return // no cambió nada: la pantalla queda como estaba, sin gastar
+		} else {
+			o.lastSig = sig
+		}
+	} else {
+		o.lastSig = ""
+	}
+	s.Clear()
+	if debugDraw {
+		o.redraws++
+		if time.Since(o.dbgAt) > 5*time.Second {
+			logf("dibujo: %.1f repintadas/s rapido=%v act=%q dormido=%v particulas=%d", float64(o.redraws)/time.Since(o.dbgAt).Seconds(), o.fast, o.pet.act, o.pet.asleep, len(o.pet.parts))
+			o.redraws, o.dbgAt = 0, time.Now()
+		}
+	}
+	o.btns = o.btns[:0]
+	if o.scene == SceneNone || o.scene == SceneMatch {
+		o.panelR = btnArea{}
+	}
 	_, game := gin.Peek()
-	switch st := gin.Status(); {
-	case st == HookPermission:
-		ptxt(s, "IDLE NECESITA PERMISO DE ACCESIBILIDAD", float64(o.sw)-28, float64(o.sh)-54, 8, colAcc, 1)
-		ptxt(s, "AJUSTES > PRIVACIDAD Y SEGURIDAD > ACCESIBILIDAD > IDLE", float64(o.sw)-28, float64(o.sh)-34, 8, colInk, 1)
-	case st == HookFailed:
-		ptxt(s, "IDLE NO PUDO LEER EL TECLADO", float64(o.sw)-28, float64(o.sh)-34, 8, colErr, 1)
-	case !game && o.tick < 60*8:
-		ptxt(s, "IDLE · ↑ Y ↓ JUNTAS, DOS VECES = JUGAR", float64(o.sw)-28, float64(o.sh)-34, 8, colInk, 1)
-	}
-	if st, v := o.upd.Status(); st == "listo" {
-		ptxt(s, "IDLE: ACTUALIZANDO A V"+v, float64(o.sw)-28, 24, 8, colOk, 1)
-	}
-	if game {
-		switch o.scene {
-		case SceneMenu:
-			o.drawMenu(s)
-		case SceneProfile:
-			o.drawProfile(s)
-		case SceneSearch:
-			o.drawSearch(s)
-		case SceneMatch:
+	if o.scene == SceneMatch {
+		if game {
 			o.drawMatch(s)
 		}
+		shot(s, o.tick)
+		return
+	}
+	tx, ty := o.trashPos()
+	if o.pet.drag || o.pet.Dying() {
+		drawTrash(s, tx, ty, o.pet.overTrash, 0)
+		if o.pet.drag {
+			msg, c := "SUELTALO AQUI PARA CERRAR IDLE", colInk
+			if o.pet.overTrash {
+				msg, c = "¡SUELTA PARA CERRAR IDLE!", colErr
+			}
+			ptxt(s, msg, tx, ty+52, 8, c, 0)
+		}
+	}
+	if o.byeAt.IsZero() || o.pet.Dying() {
+		o.pet.Draw(s, o.cfg.Av, o.mx, o.my, !o.cfg.NoAnim, tx, ty)
+	}
+	if o.scene == SceneNone && !o.pet.drag { // globitos sobre la mascota
+		var lines []string
+		var cols []color.NRGBA
+		if time.Since(o.startedAt) < 7*time.Second {
+			lines, cols = append(lines, "¡HOLA! HAZME CLIC"), append(cols, colInk)
+		}
+		if gin.Status() == HookPermission && time.Since(o.startedAt) < 20*time.Second {
+			lines, cols = append(lines, "PARA JUGAR CON FLECHAS:", "DAME PERMISO DE"+" ACCESIBILIDAD"), append(cols, colAcc, colAcc)
+		}
+		if gin.Status() == HookFailed {
+			lines, cols = append(lines, "NO PUDE LEER EL TECLADO"), append(cols, colErr)
+		}
+		if st, v := o.upd.Status(); st == "listo" {
+			lines, cols = append(lines, "ACTUALIZANDO A V"+v), append(cols, colOk)
+		}
+		for i := range lines {
+			ptxt(s, lines[i], o.pet.cx, o.pet.by-12*o.pet.sc-24-float64(len(lines)-1-i)*20, 8, cols[i], 0)
+		}
+	}
+	switch o.scene {
+	case SceneMenu:
+		o.drawMenu(s)
+	case SceneProfile:
+		o.drawProfile(s)
+	case SceneSearch:
+		o.drawSearch(s)
 	}
 	shot(s, o.tick)
 }
 
 func (o *Overlay) drawMenu(s *ebiten.Image) {
-	x, y := o.panel(s, 340, 214)
-	drawAvatar(s, x+18, y+44, 4, o.cfg.Av, o.tick, false)
-	txt(s, o.cfg.Av.DisplayName(), x+42, y+86, 8, o.cfg.Av.Col(), 0)
 	labels := map[string]string{"online": "PONG ONLINE", "cpu": "PONG VS CPU", "perfil": "PERSONAJE",
-		"sonido": "SONIDO: NO", "salir": "CERRAR IDLE"}
+		"anim": "ANIMACIONES: SI", "sonido": "SONIDO: NO", "salir": "CERRAR IDLE"}
+	if o.cfg.NoAnim {
+		labels["anim"] = "ANIMACIONES: NO"
+	}
 	if !o.snd.Mute {
 		labels["sonido"] = "SONIDO: SI"
 	}
+	w, h := 300.0, 30+float64(len(menuItems))*28+34
+	x, y := o.panel(s, w, h)
+	txt(s, o.cfg.Av.DisplayName(), x+16, y+12, 8, o.cfg.Av.Col(), -1)
 	for i, id := range menuItems {
-		iy := y + 16 + float64(i)*28
+		b := o.button(id, x+6, y+30+float64(i)*28, w-12, 26)
 		c := colDim
 		if i == o.sel {
-			rect(s, x+86, iy-6, 242, 26, colCard)
-			txt(s, "▶", x+92, iy, 16, colAcc, -1)
+			rect(s, b.x, b.y, b.w, b.h, colCard)
+			txt(s, "▶", b.x+8, b.y+6, 16, colAcc, -1)
 			c = colInk
 		}
-		txt(s, labels[id], x+114, iy, 16, c, -1)
+		txt(s, labels[id], b.x+30, b.y+6, 16, c, -1)
 	}
-	txt(s, "↑↓ ELEGIR · ENTER · M SONIDO", x+170, y+164, 8, colDim, 0)
-	txt(s, "↑ Y ↓ JUNTAS ×2 = TRABAJO", x+170, y+184, 8, colDim, 0)
+	txt(s, "ARRASTRAME AL BASURERO PARA CERRAR", x+w/2, y+h-22, 8, colLine, 0)
 }
 
 func (o *Overlay) profValue(r int) string {
@@ -370,16 +748,18 @@ func (o *Overlay) profValue(r int) string {
 }
 
 func (o *Overlay) drawProfile(s *ebiten.Image) {
-	x, y := o.panel(s, 420, 300)
-	drawAvatar(s, x+180, y+36, 5, o.cfg.Av, o.tick, false)
+	w, h := 420.0, 250.0
+	x, y := o.panel(s, w, h)
+	txt(s, "PERSONAJE", x+16, y+12, 8, colDim, -1)
 	for r, l := range profLabels {
-		ry := y + 96 + float64(r)*26
+		ry := y + 34 + float64(r)*28
 		c := colDim
 		if r == o.sel {
-			rect(s, x+10, ry-6, 400, 26, colCard)
+			rect(s, x+6, ry-6, w-12, 26, colCard)
 			c = colInk
 		}
-		txt(s, l, x+20, ry+4, 8, c, -1)
+		o.button("pf:"+string(rune('0'+r)), x+6, ry-6, w-12, 26)
+		txt(s, l, x+18, ry+4, 8, c, -1)
 		val := o.profValue(r)
 		if r >= 4 {
 			if r == o.sel && (o.tick/30)%2 == 0 {
@@ -395,15 +775,22 @@ func (o *Overlay) drawProfile(s *ebiten.Image) {
 		if r == 1 {
 			rect(s, x+130, ry, 16, 16, o.cfg.Av.Col())
 		}
-		txt(s, "◀ "+val+" ▶", x+300, ry, 16, c, 0)
+		// botones ◀ ▶ (se agregan después para que tengan prioridad sobre la fila)
+		o.btns = append([]btnArea{{x + 160, ry - 6, 30, 26, "pf:" + string(rune('0'+r)) + "-"},
+			{x + w - 40, ry - 6, 30, 26, "pf:" + string(rune('0'+r)) + "+"}}, o.btns...)
+		txt(s, "◀", x+168, ry, 16, colAcc, -1)
+		txt(s, val, x+(160+w-10)/2, ry, 16, c, 0)
+		txt(s, "▶", x+w-32, ry, 16, colAcc, -1)
 	}
-	txt(s, "↑↓ FILA · ←→ CAMBIAR · ESCRIBE NOMBRE/SALA", x+210, y+260, 8, colDim, 0)
-	txt(s, "ENTER LISTO", x+210, y+278, 8, colDim, 0)
+	b := o.button("listo", x+w-110, y+h-36, 100, 28)
+	rect(s, b.x, b.y, b.w, b.h, colAcc)
+	txt(s, "LISTO", b.x+b.w/2, b.y+7, 16, colBg, 0)
+	txt(s, "ESCRIBE NOMBRE Y SALA", x+16, y+h-28, 8, colLine, -1)
 }
 
 func (o *Overlay) drawSearch(s *ebiten.Image) {
-	x, y := o.panel(s, 340, 150)
-	drawAvatar(s, x+18, y+40, 4, o.cfg.Av, o.tick, false)
+	w, h := 330.0, 150.0
+	x, y := o.panel(s, w, h)
 	st := NetConnecting
 	if o.nw != nil {
 		st = o.nw.Status()
@@ -414,10 +801,13 @@ func (o *Overlay) drawSearch(s *ebiten.Image) {
 		NetJoining:    {"ENTRANDO" + dots(o.tick), ""},
 		NetNoInternet: {"SIN INTERNET", "REINTENTANDO" + dots(o.tick)},
 	}[st]
-	txt(s, lines[0], x+96, y+28, 16, colInk, -1)
-	txt(s, lines[1], x+96, y+52, 16, colInk, -1)
-	txt(s, "SALA "+o.cfg.Room, x+96, y+84, 8, colDim, -1)
-	txt(s, "EN SU PC: PONG ONLINE · ESC CANCELA", x+170, y+124, 8, colDim, 0)
+	txt(s, lines[0], x+16, y+18, 16, colInk, -1)
+	txt(s, lines[1], x+16, y+42, 16, colInk, -1)
+	txt(s, "SALA "+o.cfg.Room+" · EN SU PC: PONG ONLINE", x+16, y+76, 8, colDim, -1)
+	b := o.button("cancelar", x+w-130, y+h-40, 120, 28)
+	rect(s, b.x, b.y, b.w, b.h, colCard)
+	frame(s, b.x, b.y, b.w, b.h, colLine)
+	txt(s, "CANCELAR", b.x+b.w/2, b.y+7, 16, colInk, 0)
 }
 
 func (o *Overlay) drawMatch(s *ebiten.Image) {
@@ -476,8 +866,11 @@ func (o *Overlay) drawMatch(s *ebiten.Image) {
 	}
 }
 
-// runOverlay abre la ventana transparente sobre toda la pantalla.
+// runOverlay abre la ventana transparente sobre toda la pantalla, sin ícono.
 func runOverlay() error {
+	if !acquireInstance() {
+		return nil // ya hay una mascota abierta
+	}
 	startHook()
 	mw, mh := 1280, 800
 	if m := ebiten.Monitor(); m != nil {
@@ -487,12 +880,13 @@ func runOverlay() error {
 		mh-- // si ocupa exacto el monitor, Windows la trata como pantalla completa y esconde la barra de tareas
 	}
 	o := NewOverlay()
+	o.sw, o.sh = mw, mh+map[bool]int{true: 1, false: 0}[runtime.GOOS == "windows"]
+	o.initPet()
 	switch os.Getenv("MJ_DEMO") { // pruebas: arranca directo en una partida
 	case "cpu":
-		gin.SetGame(true)
 		o.startCPU()
 	case "online":
-		gin.SetGame(true)
+		o.setGame(true)
 		o.startOnline()
 	}
 	ebiten.SetWindowTitle("Idle")
@@ -500,8 +894,9 @@ func runOverlay() error {
 	ebiten.SetWindowFloating(true)
 	ebiten.SetWindowMousePassthrough(true)
 	ebiten.SetRunnableOnUnfocused(true)
-	ebiten.SetWindowSize(mw, mh)
-	ebiten.SetWindowPosition(0, 0)
+	o.placeWindow()
 	ebiten.SetWindowIcon([]image.Image{appIcon(16), appIcon(32), appIcon(64)})
-	return ebiten.RunGameWithOptions(o, &ebiten.RunGameOptions{ScreenTransparent: true, InitUnfocused: true})
+	ebiten.SetScreenClearedEveryFrame(false) // se repinta solo cuando algo cambia (ver Draw)
+	ebiten.SetTPS(10)
+	return ebiten.RunGameWithOptions(o, &ebiten.RunGameOptions{ScreenTransparent: true, InitUnfocused: true, SkipTaskbar: true})
 }

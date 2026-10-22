@@ -1,6 +1,11 @@
 # Idle
 
-Mini ventana de escritorio para Mac y Windows.
+Mascota de escritorio para Mac y Windows: un personaje pixelado que vive en una esquina de la
+pantalla, sin ícono, y con el que se puede jugar Pong (contra la CPU o en red).
+
+- **Clic** en el personaje: menú (jugar, personaje, animaciones, sonido).
+- **Arrastrarlo**: moverlo de lugar. Soltarlo en el **basurero** cierra Idle; para volver, se abre la app.
+- **↑ y ↓ juntas, dos veces**: modo juego (las flechas son del juego) / modo trabajo.
 
 ## Instalar
 

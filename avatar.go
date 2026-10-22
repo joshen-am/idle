@@ -195,14 +195,39 @@ func drawAvatar(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip bool
 	drawAvatarTint(dst, x, y, sc, av, t, flip, nil)
 }
 
+// Pose: cómo está el personaje en este momento (para animarlo como mascota).
+type Pose struct {
+	Still  bool    // sin respirar ni parpadear (animaciones apagadas)
+	Eyes   int     // -1 = sus ojos; 0..5 = un estilo (3 = cerrados, 1 = sorprendido, 2 = feliz)
+	EyeDX  int     // mira hacia un lado (-1 izquierda, 1 derecha)
+	Mouth  bool    // boca abierta (bostezo o sorpresa)
+	Dangle bool    // lo levantaron: las patitas cuelgan y se mueven
+	SX, SY float64 // estirar/aplastar (1 = normal)
+}
+
+var normalPose = Pose{Eyes: -1, SX: 1, SY: 1}
+
 // drawAvatarTint dibuja el personaje; con tint todo sale de ese color (sirve para la sombra).
 func drawAvatarTint(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip bool, tint color.Color) {
+	drawAvatarPose(dst, x, y, sc, av, t, flip, tint, normalPose)
+}
+
+// drawAvatarPose dibuja el personaje en una pose. (x, y) es la esquina del cuerpo de 12x8;
+// al estirar o aplastar, los pies quedan en su lugar.
+func drawAvatarPose(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip bool, tint color.Color, pose Pose) {
 	av = av.fix()
 	b := bodies[av.Body]
 	c := av.Col()
-	if (t/30)%2 == 0 {
+	if pose.SX == 0 {
+		pose.SX = 1
+	}
+	if pose.SY == 0 {
+		pose.SY = 1
+	}
+	if !pose.Still && (t/30)%2 == 0 {
 		y -= sc // respira
 	}
+	cw, ch := sc*pose.SX, sc*pose.SY
 	cell := func(cx, cy int, col color.Color) {
 		if flip {
 			cx = 11 - cx
@@ -210,15 +235,24 @@ func drawAvatarTint(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip 
 		if tint != nil {
 			col = tint
 		}
-		rect(dst, x+float64(cx)*sc, y+float64(cy)*sc, sc, sc, col)
+		rect(dst, x+6*sc-6*cw+float64(cx)*cw, y+8*sc-float64(8-cy)*ch, cw, ch, col)
 	}
 	for r, row := range b.rows {
-		for i, ch := range row {
-			switch ch {
+		for i, chr := range row {
+			switch chr {
 			case '#':
 				cell(i, r, c)
 			case 'l':
-				cell(i, r, shade(c, .72))
+				if pose.Dangle && r >= 5 { // patitas colgando: más largas y moviéndose
+					dx := 0
+					if (t/6+i)%2 == 0 {
+						dx = 1
+					}
+					cell(i+dx-(i/6)*dx*2, r, shade(c, .72))
+					cell(i+dx-(i/6)*dx*2, r+1, shade(c, .72))
+				} else {
+					cell(i, r, shade(c, .72))
+				}
 			}
 		}
 	}
@@ -226,10 +260,13 @@ func drawAvatarTint(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip 
 	ink := colBg
 	ey := b.eyeY
 	style := int(av.Eyes)
-	if t%200 < 7 && style != 5 {
+	if pose.Eyes >= 0 {
+		style = pose.Eyes
+	}
+	if !pose.Still && t%200 < 7 && style != 5 {
 		style = 3
 	}
-	for side, ex := range []int{3, 7} {
+	for side, ex := range []int{3 + pose.EyeDX, 7 + pose.EyeDX} {
 		var on [][2]int
 		switch style {
 		case 0: // puntos
@@ -263,13 +300,17 @@ func drawAvatarTint(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip 
 	}
 	if style == 5 {
 		for i := 2; i <= 9; i++ {
-			cell(i, ey, ink)
+			cell(i+pose.EyeDX, ey, ink)
 		}
+	}
+	if pose.Mouth {
+		cell(5, ey+3, ink)
+		cell(6, ey+3, ink)
 	}
 	if h := hats[av.Hat]; h.rows != nil {
 		for r, row := range h.rows {
-			for i, ch := range row {
-				if ch == '#' {
+			for i, chr := range row {
+				if chr == '#' {
 					cell(i, r-3, h.col)
 				}
 			}
