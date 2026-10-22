@@ -1,0 +1,25 @@
+# Prueba del Pong de 4 por internet (anfitrión + 2 invitados) en un Windows real.
+name: x4test
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  x4:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Pong de 4 por internet
+        env: { MJ_REAL: "1", MJ_NOSOUND: "1", MJ_LOG_STDOUT: "1" }
+        shell: bash
+        run: go test -run TestX4Real -v -count=1 -timeout 8m . 2>&1 | tee out.txt; exit ${PIPESTATUS[0]}
+      - name: Guardar registro
+        if: always()
+        shell: bash
+        run: |
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git checkout -q --orphan logs/x4 && git rm -rqf --cached . >/dev/null
+          git add -f out.txt && git commit -qm registro && git push -qf origin HEAD:refs/heads/logs/x4

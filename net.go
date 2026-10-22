@@ -72,6 +72,12 @@ type Net struct {
 
 	peerAv   []byte // personaje del otro
 	peerProf []byte // sus victorias (para el ranking)
+	full     bool   // la sala ya tiene compañero (Pong de 4: probar la siguiente)
+
+	// Pong de 4: el último paquete de cada tipo y los avisos de golpe en cola
+	raw    map[byte][]byte
+	rawN   map[byte]int
+	rawQ   [][]byte
 
 	// lado anfitrión
 	hit          HitPkt
@@ -148,6 +154,8 @@ func (n *Net) asHost(s *signal) {
 		}
 		if m.Src == n.peer {
 			n.handle(p.G)
+		} else if len(p.G) >= 3 && p.G[2] == 'J' { // ya hay compañero: que pruebe en otra sala
+			go s.sendTo(m.Src, sigPayload{G: []byte{magic, proto, 'F'}})
 		}
 		n.mu.Unlock()
 	}
@@ -163,7 +171,7 @@ func (n *Net) asGuest(s *signal, hostID string) {
 	go func() {
 		for i := 0; i < 40; i++ {
 			n.mu.Lock()
-			done := n.closed || n.hasSt
+			done := n.closed || n.hasSt || len(n.raw) > 0 || n.full
 			n.mu.Unlock()
 			if done {
 				return
@@ -245,6 +253,18 @@ func (n *Net) handle(buf []byte) {
 		n.peerAv = append([]byte(nil), b...)
 	case 'P':
 		n.peerProf = append([]byte(nil), b...)
+	case 'F':
+		n.full = true
+	case 'Y', 'Z', 'W':
+		if n.raw == nil {
+			n.raw, n.rawN = map[byte][]byte{}, map[byte]int{}
+		}
+		n.raw[buf[2]] = append([]byte(nil), b...)
+		n.rawN[buf[2]]++
+	case 'K':
+		if len(n.rawQ) < 16 {
+			n.rawQ = append(n.rawQ, append([]byte(nil), b...))
+		}
 	case 'H':
 		if n.host && len(b) >= 10 {
 			n.hit = HitPkt{Idx: b[0], Sum: b[1], Y: float64(f(2)), B: float64(f(6))}
@@ -286,7 +306,7 @@ func (n *Net) send(kind byte, body []byte) {
 	if n.out == nil || n.peer == "" {
 		return
 	}
-	if kind == 'S' || kind == 'I' {
+	if kind == 'S' || kind == 'I' || kind == 'Z' || kind == 'W' {
 		if time.Since(n.lastTx) < RelayGap {
 			return
 		}
@@ -395,6 +415,31 @@ func (n *Net) PeerAvatar() (Avatar, bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return DecodeAvatar(n.peerAv)
+}
+
+func (n *Net) SendRaw(kind byte, body []byte) { n.send(kind, body) }
+
+// Raw: el último paquete de ese tipo y cuántos van llegando.
+func (n *Net) Raw(kind byte) ([]byte, int) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.raw[kind], n.rawN[kind]
+}
+
+// TakeQueue: los avisos de golpe que llegaron.
+func (n *Net) TakeQueue() [][]byte {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	q := n.rawQ
+	n.rawQ = nil
+	return q
+}
+
+// Full: la sala tenía compañero.
+func (n *Net) Full() bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.full
 }
 
 // PeerProfile: id, nombre y victorias del otro (si ya llegaron).

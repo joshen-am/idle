@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -33,9 +34,11 @@ const (
 	SceneBoard
 	SceneDiary
 	SceneCPUPick
+	SceneLobby4
+	SceneMatch4
 )
 
-var menuItems = []string{"online", "cpu", "tienda", "ranking", "diario", "perfil", "anim", "sonido", "salir"}
+var menuItems = []string{"online", "cpu", "x4", "tienda", "ranking", "diario", "perfil", "anim", "sonido", "salir"}
 
 var profLabels = []string{"CUERPO", "COLOR", "OJOS", "GORRO", "NOMBRE", "SALA"}
 
@@ -101,6 +104,8 @@ type Overlay struct {
 	overLine  string // lo que dice el CPU al terminar
 	toast     string
 	toastAt   time.Time
+	m4        *Match4 // Pong de 4
+	demo4     bool
 	nearAt    time.Time // la última vez que el mouse anduvo cerca de la mascota
 	owesFocus bool      // hicieron clic en Idle: al irse el mouse, el teclado vuelve a su ventana
 	typing    bool      // escribiendo el nombre o la sala
@@ -213,7 +218,11 @@ func (o *Overlay) closeMatch() {
 		o.nw.Close()
 		o.nw = nil
 	}
-	if o.scene == SceneMatch || o.scene == SceneSearch {
+	if o.m4 != nil {
+		o.m4.Close()
+		o.m4 = nil
+	}
+	if o.scene == SceneMatch || o.scene == SceneSearch || o.scene == SceneMatch4 || o.scene == SceneLobby4 {
 		o.setGame(false)
 	}
 	o.scene, o.act = SceneNone, false
@@ -276,6 +285,10 @@ func (o *Overlay) menuAction(id string) {
 		o.startOnline()
 	case "cpu":
 		o.scene, o.sel = SceneCPUPick, 0
+	case "x4":
+		o.closeMatch()
+		o.m4 = NewMatch4(o.cfg.Room, o.cfg.Av, o.cfg.MyProfile(), o.snd)
+		o.scene = SceneLobby4
 	case "tienda":
 		o.scene, o.storeSel = SceneStore, int(*slot(&o.cfg.Av, storeCats[o.storeTab].key))
 	case "ranking":
@@ -354,6 +367,15 @@ func (o *Overlay) handleKey(k Key) {
 		case KEsc:
 			o.closeMatch()
 		}
+	case SceneLobby4, SceneMatch4:
+		switch k {
+		case KEnter, KSpace:
+			if o.m4.p.Ph == PhOver || !o.m4.Started {
+				o.m4.Start()
+			}
+		case KEsc:
+			o.closeMatch()
+		}
 	}
 }
 
@@ -405,8 +427,8 @@ func (o *Overlay) Update() error {
 	}
 
 	// mouse en los paneles: elegir con un clic
-	inPanel := o.scene != SceneNone && o.scene != SceneMatch && o.panelR.has(o.mx, o.my) ||
-		o.scene == SceneMatch && o.overButton()
+	inPanel := o.scene != SceneNone && !o.inGame() && o.panelR.has(o.mx, o.my) ||
+		o.inGame() && o.overButton()
 	if pressed {
 		o.pressedIn = inPanel
 	}
@@ -429,7 +451,7 @@ func (o *Overlay) Update() error {
 	}
 
 	// la mascota (escondida mientras se juega)
-	if o.scene != SceneMatch && o.byeAt.IsZero() {
+	if !o.inGame() && o.byeAt.IsZero() {
 		tx, ty := o.trashPos()
 		click, rel, trashed := o.pet.Update(o.mx, o.my, o.down && !o.pressedIn, !o.cfg.NoAnim, float64(o.sw), float64(o.sh), tx, ty)
 		if click {
@@ -488,12 +510,15 @@ func (o *Overlay) Update() error {
 			o.afterMatchFrame()
 		}
 	}
+	if o.m4 != nil {
+		o.updateMatch4(game)
+	}
 	o.checkDiary()
 
 	o.updateWindow()
 	o.placeWindow()
 
-	if st, _ := o.upd.Status(); st == "listo" && o.match == nil && o.nw == nil && o.scene == SceneNone && !o.pet.Busy() {
+	if st, _ := o.upd.Status(); st == "listo" && o.match == nil && o.nw == nil && o.m4 == nil && o.scene == SceneNone && !o.pet.Busy() {
 		if o.updAt == 0 {
 			o.updAt = o.tick + 30
 		} else if o.tick >= o.updAt && o.upd.Apply() {
@@ -548,10 +573,18 @@ func (o *Overlay) clickButton(id string) {
 			o.stopTyping()
 			o.sel = r
 		}
+	case id == "revancha" && o.m4 != nil:
+		o.m4.Start()
 	case id == "revancha":
 		o.act = true
 	case id == "salir":
 		o.closeMatch()
+	case id == "x4:cpu" && o.m4 != nil:
+		o.m4.AddCPU()
+	case id == "x4:go" && o.m4 != nil:
+		o.m4.Start()
+	case strings.HasPrefix(id, "x4:rm:") && o.m4 != nil:
+		o.m4.RemoveCPU(int(id[6] - '0'))
 	}
 }
 
@@ -570,8 +603,8 @@ func (o *Overlay) updateWindow() {
 	if math.Hypot(o.mx-o.pet.cx, o.my-(o.pet.by-6*o.pet.sc)) < 260 {
 		o.nearAt = time.Now()
 	}
-	interactive := o.pressedIn || (o.scene == SceneMatch && o.overButton()) ||
-		o.scene != SceneMatch && (o.pet.Hit(o.mx, o.my) || o.pet.pressed || o.pet.drag ||
+	interactive := o.pressedIn || (o.inGame() && o.overButton()) ||
+		!o.inGame() && (o.pet.Hit(o.mx, o.my) || o.pet.pressed || o.pet.drag ||
 			(o.scene != SceneNone && o.panelR.has(o.mx, o.my)))
 	if pass := !interactive; pass != o.passOn {
 		o.passOn = pass
@@ -748,13 +781,15 @@ func (o *Overlay) Draw(s *ebiten.Image) {
 		}
 	}
 	o.btns = o.btns[:0]
-	if o.scene == SceneNone || o.scene == SceneMatch {
+	if o.scene == SceneNone || o.inGame() {
 		o.panelR = btnArea{}
 	}
 	_, game := gin.Peek()
-	if o.scene == SceneMatch {
-		if game {
+	if o.inGame() {
+		if game && o.scene == SceneMatch {
 			o.drawMatch(s)
+		} else if game {
+			o.drawMatch4(s)
 		}
 		shot(s, o.tick)
 		return
@@ -807,12 +842,14 @@ func (o *Overlay) Draw(s *ebiten.Image) {
 		o.drawDiary(s)
 	case SceneCPUPick:
 		o.drawCPUPick(s)
+	case SceneLobby4:
+		o.drawLobby4(s)
 	}
 	shot(s, o.tick)
 }
 
 func (o *Overlay) drawMenu(s *ebiten.Image) {
-	labels := map[string]string{"online": "PONG ONLINE", "cpu": "PONG VS CPU", "tienda": "TIENDA", "ranking": "RANKING",
+	labels := map[string]string{"online": "PONG ONLINE", "cpu": "PONG VS CPU", "x4": "PONG X4", "tienda": "TIENDA", "ranking": "RANKING",
 		"diario": "DIARIO", "perfil": "PERSONAJE",
 		"anim": "ANIMACIONES: SI", "sonido": "SONIDO: NO", "salir": "CERRAR IDLE"}
 	if o.cfg.NoAnim {
@@ -1008,6 +1045,11 @@ func runOverlay() error {
 	switch os.Getenv("MJ_DEMO") { // pruebas: arranca directo en una partida
 	case "cpu":
 		o.startCPU(&cpus[0])
+	case "x4", "x4cpu":
+		o.menuAction("x4")
+		if os.Getenv("MJ_DEMO") == "x4cpu" { // pruebas: 3 CPU y a jugar
+			o.demo4 = true
+		}
 	case "tienda", "ranking", "diario":
 		o.menuAction(os.Getenv("MJ_DEMO"))
 		fmt.Sscanf(os.Getenv("MJ_PAGE"), "%d", &o.diaryPage)

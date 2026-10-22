@@ -378,3 +378,60 @@ func (o *Overlay) drawCPUPick(s *ebiten.Image) {
 		}
 	}
 }
+
+// ---------- Pong de 4 ----------
+
+func (o *Overlay) inGame() bool { return o.scene == SceneMatch || o.scene == SceneMatch4 }
+
+func (o *Overlay) updateMatch4(game bool) {
+	m := o.m4
+	if o.demo4 && m.Host() && !m.Started {
+		for m.Players() < 4 {
+			m.AddCPU()
+		}
+		m.Start()
+	}
+	if o.scene == SceneLobby4 && m.Started && m.MySide >= 0 {
+		o.scene = SceneMatch4
+		o.recorded, o.coinMsg = false, ""
+		o.setGame(true) // las flechas pasan a ser del juego
+	}
+	dir := 0.0
+	if game && m.MySide >= 0 {
+		neg, pos := KLeft, KRight
+		if m.MySide == SLeft || m.MySide == SRight {
+			neg, pos = KUp, KDown
+		}
+		if gin.Down(neg) {
+			dir--
+		}
+		if gin.Down(pos) {
+			dir++
+		}
+		if botMode && m.p.Ph == PhPlay { // pruebas: sigue la bola sola
+			dir = clamp((m.p.along(m.MySide)-(m.p.Pad[m.MySide]+PL4/2))/8, -1, 1)
+		}
+	}
+	m.Update(dir, !game)
+	if m.p.Ph != PhOver && o.recorded {
+		o.recorded, o.coinMsg = false, ""
+	}
+	if over, won, w := m.Result(); over {
+		o.recorded = true
+		rec := MatchRec{Game: "pong4", Won: won, Me: m.p.Lives[max(m.MySide, 0)], Opp: "grupo", OppName: "X4"}
+		if !won {
+			rec.OppName = w.Av.DisplayName()
+			switch {
+			case w.Kind == SlotCPU:
+				rec.Opp, rec.OppName = cpus[w.CPU].ID, cpus[w.CPU].Name
+			case w.ID != "":
+				rec.Opp = w.ID
+			default:
+				rec.Opp = "amigo"
+			}
+		}
+		o.coinMsg = fmt.Sprintf("+%d ¤", o.cfg.Record(rec))
+		saveCfg(o.cfg)
+		logf("x4: %s (%s)", map[bool]string{true: "gane", false: "perdi"}[won], o.coinMsg)
+	}
+}
