@@ -69,6 +69,7 @@ type Pong4 struct {
 	Predict bool
 	Mine    int // invitado: mi lado (mis golpes los decido yo)
 	OnHit   func(side int, rel float64)
+	Reached [4]int // cuántas veces llegó la bola a cada paleta (pruebas)
 }
 
 func NewPong4() *Pong4 {
@@ -244,7 +245,7 @@ func (p *Pong4) bounceWall(s int) {
 func (p *Pong4) Hit(s int, rel float64) {
 	p.snapTo(s)
 	p.Sp = math.Min(p.Sp*1.09, MaxSp4)
-	a := rel * .95
+	a := rel*.95 + (rand.Float64()-.5)*.12 // un poquito de efecto: nunca queda yendo y viniendo recta
 	nx, ny := sideNormal(s)
 	tx, ty := math.Abs(ny), math.Abs(nx) // a lo largo del lado (derecha o abajo)
 	p.VX = (-nx*math.Cos(a) + tx*math.Sin(a)) * p.Sp
@@ -385,6 +386,9 @@ func (p *Pong4) moveBall(dt float64) {
 			}
 			c := p.along(s)
 			corner := c < Corner4 || c > F4-Corner4
+			if !corner && p.Alive(s) && p.Pending != s {
+				p.Reached[s]++
+			}
 			switch {
 			case corner || !p.Alive(s) && !p.Predict:
 				p.bounceWall(s)
@@ -432,7 +436,16 @@ func (p *Pong4) RemoteHit(s int, rel float64) bool {
 	default:
 		d = math.Abs(p.X + BS4/2 - lineOf(s))
 	}
-	if p.Pending == s || toward && d < 45 {
+	if p.Pending == s {
+		waited := p.T - p.pendAt
+		p.Hit(s, rel)
+		// la golpeó a tiempo en su pantalla: la bola recupera lo que esperó el aviso (así los
+		// demás, que ya la vieron rebotar, no la ven volver atrás)
+		p.moveBall(waited)
+		p.anchor()
+		return true
+	}
+	if toward && d < 45 {
 		p.Hit(s, rel)
 		return true
 	}

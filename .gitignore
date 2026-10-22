@@ -1,3 +1,5 @@
 dist/
 rsrc_windows_*.syso
 /idle
+*.test
+prof.out
