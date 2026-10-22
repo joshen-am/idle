@@ -192,6 +192,11 @@ func shade(c color.NRGBA, k float64) color.NRGBA {
 // drawAvatar dibuja el personaje con la esquina superior izquierda del cuerpo en (x, y).
 // t anima (respira y parpadea); flip lo da vuelta para que mire a la izquierda.
 func drawAvatar(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip bool) {
+	drawAvatarTint(dst, x, y, sc, av, t, flip, nil)
+}
+
+// drawAvatarTint dibuja el personaje; con tint todo sale de ese color (sirve para la sombra).
+func drawAvatarTint(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip bool, tint color.Color) {
 	av = av.fix()
 	b := bodies[av.Body]
 	c := av.Col()
@@ -201,6 +206,9 @@ func drawAvatar(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip bool
 	cell := func(cx, cy int, col color.Color) {
 		if flip {
 			cx = 11 - cx
+		}
+		if tint != nil {
+			col = tint
 		}
 		rect(dst, x+float64(cx)*sc, y+float64(cy)*sc, sc, sc, col)
 	}

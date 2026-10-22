@@ -7,15 +7,15 @@ import (
 
 // Medidas en píxeles lógicos de la pantalla de 240x240.
 const (
-	W        = 240
+	W        = 400 // cancha ancha: se estira sobre toda la pantalla
 	H        = 240
 	PW       = 4  // ancho paleta
 	PH       = 34 // alto paleta
 	BS       = 5  // tamaño bola
 	PX       = 18 // distancia de la paleta al borde (deja lugar al personaje)
 	WinScore = 7
-	PSpeed   = 175.0
-	MaxSpeed = 330.0
+	PSpeed   = 220.0
+	MaxSpeed = 450.0
 	Dt       = 1.0 / 60
 )
 
@@ -203,7 +203,7 @@ func (p *Pong) RemoteHit(ballY, padB float64) bool {
 func (p *Pong) launch() {
 	ang := rand.Float64()*.8 - .4
 	p.Ph = PhPlay
-	p.X, p.Y, p.Sp, p.since = W/2-BS/2, H/2-BS/2, 125, 0
+	p.X, p.Y, p.Sp, p.since = W/2-BS/2, H/2-BS/2, 170, 0
 	p.VX = p.Serve * p.Sp * math.Cos(ang)
 	p.VY = p.Sp * math.Sin(ang)
 	p.setAnchor()

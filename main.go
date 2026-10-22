@@ -851,6 +851,12 @@ func (a *App) hoverAny() bool {
 }
 
 func main() {
+	if os.Getenv("MJ_WINDOWED") == "" { // vista previa: el modo sobre la pantalla
+		if err := runOverlay(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	a := NewApp()
 	if d := os.Getenv("MJ_DEMO"); d != "" { // para pruebas: arranca directo en una pantalla
 		a.click(d)

@@ -512,7 +512,7 @@ func shot(s *ebiten.Image, tick int) {
 	if shotDir == "" || tick%30 != 0 {
 		return
 	}
-	img := image.NewNRGBA(image.Rect(0, 0, W, H))
+	img := image.NewRGBA(s.Bounds()) // ReadPixels entrega color premultiplicado, como image.RGBA
 	s.ReadPixels(img.Pix)
 	f, err := os.Create(filepath.Join(shotDir, fmt.Sprintf("f%05d.png", tick)))
 	if err == nil {
