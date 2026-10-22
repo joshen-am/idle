@@ -1,0 +1,21 @@
+=== RUN   TestConexionReal
+17:43:33.700 servidor: llega OPEN de 
+17:43:33.737 servidor: respuesta OPEN (id idle-v1-r-t6c471)
+17:43:34.193 servidor: llega ID-TAKEN de 
+17:43:34.194 servidor: respuesta ID-TAKEN (id idle-v1-r-t6c471)
+17:43:34.585 servidor: llega OPEN de 
+17:43:34.586 servidor: respuesta OPEN (id idle-v1-g74396630a3c07293)
+17:43:34.769 red: entró el compañero (idle-v1-g74396630a3c07293)
+    net_test.go:54: conectado; anfitrión=true
+    net_test.go:54: conectado; anfitrión=false
+17:43:35.422 directo: probando [10.1.0.159:51727 127.0.0.1:51727 172.22.80.1:51727]
+17:43:35.422 directo: nos llegan sus respuestas (10.1.0.159:51727)
+17:43:36.273 directo: probando [10.1.0.159:51728 127.0.0.1:51728 172.22.80.1:51728]
+17:43:36.275 directo: nos llegan sus respuestas (10.1.0.159:51728)
+17:43:36.276 directo: ¡funciona en los dos sentidos!
+17:43:36.324 directo: ¡funciona en los dos sentidos!
+    net_test.go:74: directo=true
+    net_test.go:74: directo=true
+--- PASS: TestConexionReal (6.87s)
+PASS
+ok  	idle	6.950s
