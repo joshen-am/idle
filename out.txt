@@ -1,0 +1,12 @@
+=== RUN   TestHookWindows
+18:40:03.722 teclado: hook instalado
+18:40:03.903 teclado: modo juego
+    hook_windows_test.go:55: en modo juego la A debía tragarse (bajar y soltar): 1
+--- FAIL: TestHookWindows (0.86s)
+=== RUN   TestGestoYTeclas
+18:40:04.587 teclado: modo juego
+18:40:04.587 teclado: modo trabajo
+--- PASS: TestGestoYTeclas (0.00s)
+FAIL
+FAIL	idle	0.929s
+FAIL
