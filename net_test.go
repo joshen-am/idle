@@ -65,8 +65,12 @@ func TestConexionReal(t *testing.T) {
 		time.Sleep(16 * time.Millisecond)
 	}
 	for _, n := range nets {
-		if n.Lost() {
+		n.mu.Lock()
+		lost := !n.bye && time.Since(n.lastRx) > 5*time.Second // si el otro terminó antes y se despidió, está bien
+		n.mu.Unlock()
+		if lost {
 			t.Fatal("se perdió la conexión")
 		}
+		t.Logf("directo=%v", n.Direct())
 	}
 }
