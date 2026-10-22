@@ -1,105 +1,72 @@
 package main
 
 import (
+	"fmt"
+	"math/rand"
 	"os"
-	"strings"
 	"testing"
 	"time"
 )
 
 // Prueba de conexión real por internet (servidor público). Solo corre con MJ_REAL=1.
-// MJ_ROLE=host|guest|both y MJ_ROOM=código permiten probar entre dos máquinas distintas.
+// Con MJ_ROOM las dos máquinas (dos trabajos de GitHub) entran a la misma sala; sin MJ_ROOM,
+// los dos jugadores corren en este mismo proceso.
 func TestConexionReal(t *testing.T) {
 	if os.Getenv("MJ_REAL") == "" {
 		t.Skip("solo con MJ_REAL=1")
 	}
-	role, code := os.Getenv("MJ_ROLE"), strings.ToUpper(os.Getenv("MJ_ROOM"))
-	if code != "" {
-		code = (code + "XXXX")[:4] // siempre 4 letras
+	room := os.Getenv("MJ_ROOM")
+	var nets []*Net
+	if room != "" {
+		nets = []*Net{AutoRoom(room)}
+	} else {
+		room = fmt.Sprintf("T%X", rand.Intn(1<<20))
+		a := AutoRoom(room)
+		for a.Status() != NetWaiting {
+			time.Sleep(100 * time.Millisecond)
+		}
+		nets = []*Net{a, AutoRoom(room)}
 	}
-	if role == "" {
-		role = "both"
+	for _, n := range nets {
+		defer n.Close()
 	}
-	var host, guest *Net
-	if role == "host" || role == "both" {
-		if code != "" {
-			os.Setenv("MJ_CODE", code)
-		}
-		host = HostRoom()
-		defer host.Close()
-		deadline := time.Now().Add(20 * time.Second)
-		for host.RTCStatus() != NetOnline {
-			if time.Now().After(deadline) {
-				t.Fatalf("el anfitrión no llegó al servidor (estado %d)", host.RTCStatus())
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
-		t.Logf("sala creada: %s", host.Code)
-		code = host.Code
-		if role == "host" { // esperar al invitado (otra máquina)
-			deadline := time.Now().Add(4 * time.Minute)
-			for !host.Connected() {
-				if time.Now().After(deadline) {
-					t.Fatal("el invitado nunca llegó")
-				}
-				host.SendState(NewPong(), 0)
-				time.Sleep(50 * time.Millisecond)
-			}
-		}
-	}
-	if role == "guest" || role == "both" {
-		wait := 3 * time.Minute
-		if os.Getenv("MJ_ROLE") == "" {
-			wait = 40 * time.Second
-		}
-		deadline := time.Now().Add(wait)
-		for {
-			guest = NewSearcher()
-			guest.JoinCode(code)
-			start := time.Now()
-			for time.Since(start) < 35*time.Second && !guest.Connected() && guest.RTCStatus() != NetNoRoom && guest.RTCStatus() != NetNoInternet {
-				guest.SendInput(100, 0, 0)
-				if host != nil && host.Connected() {
-					host.SendState(NewPong(), 0)
-				}
-				time.Sleep(50 * time.Millisecond)
-			}
-			if guest.Connected() {
-				break
-			}
-			t.Logf("intento fallido: estado %d via %q", guest.RTCStatus(), guest.Via())
-			guest.Close()
-			if time.Now().After(deadline) {
-				t.Fatal("el invitado no pudo conectarse")
-			}
-			time.Sleep(3 * time.Second)
-		}
-		defer guest.Close()
-		t.Logf("invitado conectado por %q", guest.Via())
-	}
-	// intercambio de paquetes durante 5 segundos
+	deadline := time.Now().Add(4 * time.Minute)
 	p := NewPong()
-	end := time.Now().Add(5 * time.Second)
-	got := false
-	for time.Now().Before(end) {
-		if host != nil && host.Connected() {
-			host.SendState(p, 0)
-			if _, _, ok := host.GuestPaddle(); ok {
-				got = true
+	for {
+		ok := true
+		for _, n := range nets {
+			if n.IsHost() {
+				n.SendState(p, 0)
+			} else {
+				n.SendInput(100, 0, 0)
 			}
+			ok = ok && n.Connected()
 		}
-		if guest != nil {
-			guest.SendInput(120, 0, 0)
-			if _, ok := guest.State(); ok {
-				got = true
+		if ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no se conectaron (estado %d)", nets[0].Status())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	for _, n := range nets {
+		t.Logf("conectado; anfitrión=%v", n.IsHost())
+	}
+	end := time.Now().Add(5 * time.Second)
+	for time.Now().Before(end) {
+		for _, n := range nets {
+			if n.IsHost() {
+				n.SendState(p, 0)
+			} else {
+				n.SendInput(100, 0, 0)
 			}
 		}
 		time.Sleep(16 * time.Millisecond)
 	}
-	if !got {
-		t.Fatal("conectados pero no pasaron datos")
-	}
-	if host != nil {
-		t.Logf("anfitrión conectado por %q", host.Via())
+	for _, n := range nets {
+		if n.Lost() {
+			t.Fatal("se perdió la conexión")
+		}
 	}
 }

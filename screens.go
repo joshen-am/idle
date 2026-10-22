@@ -112,14 +112,12 @@ func (a *App) Draw(s *ebiten.Image) {
 			a.drawMenu(s)
 		case SPong:
 			a.drawModes(s)
-		case SHost:
-			a.drawHost(s)
-		case SJoin:
-			a.drawJoin(s)
+		case SOnline:
+			a.drawOnline(s)
 		case SProfile:
 			a.drawProfile(s)
 		}
-		a.drawTopBar(s, map[Scene]string{SMenu: "IDLE", SPong: "PONG", SHost: "CREAR SALA", SJoin: "UNIRSE", SProfile: "PERSONAJE"}[a.scene])
+		a.drawTopBar(s, map[Scene]string{SMenu: "IDLE", SPong: "PONG", SOnline: "ONLINE", SProfile: "PERSONAJE"}[a.scene])
 		a.drawUpdate(s)
 	}
 	frame(s, 0, 0, W, H, colLine) // borde para que se vea el contorno de la ventana
@@ -227,7 +225,7 @@ func (a *App) drawMenu(s *ebiten.Image) {
 
 // ---------- editor del personaje ----------
 
-var profLabels = []string{"CUERPO", "COLOR", "OJOS", "GORRO", "NOMBRE"}
+var profLabels = []string{"CUERPO", "COLOR", "OJOS", "GORRO", "NOMBRE", "SALA"}
 
 func (a *App) profValue(r int) string {
 	av := a.cfg.Av.fix()
@@ -249,18 +247,22 @@ func (a *App) drawProfile(s *ebiten.Image) {
 	rect(s, 70, 88, 100, 1, colLine)
 	drawAvatar(s, 90, 48, 5, a.cfg.Av, a.tick, false)
 	for r, l := range profLabels {
-		y := 104 + float64(r)*20
+		y := profY(r)
 		if a.sel == r {
-			rect(s, 4, y-4, W-8, 18, colCard)
+			rect(s, 4, y-4, W-8, 16, colCard)
 			txt(s, ">", 8, y+1, 8, colAcc, -1)
 		}
 		txt(s, l, 18, y+1, 8, colDim, -1)
-		if r == 4 {
+		if r >= 4 {
 			cur := ""
-			if a.sel == 4 && (a.tick/30)%2 == 0 {
+			if a.sel == r && (a.tick/30)%2 == 0 {
 				cur = "_"
 			}
-			txt(s, a.cfg.Av.Name+cur, 112, y+1, 8, a.cfg.Av.Col(), -1)
+			val, col := a.cfg.Av.Name, a.cfg.Av.Col()
+			if r == 5 {
+				val, col = a.cfg.Room, colInk
+			}
+			txt(s, val+cur, 112, y+1, 8, col, -1)
 			continue
 		}
 		for _, d := range []int{-1, 1} {
@@ -273,7 +275,7 @@ func (a *App) drawProfile(s *ebiten.Image) {
 			txt(s, a.profValue(r), 166, y+1, 8, colInk, 0)
 		}
 	}
-	txt(s, "ESCRIBE TU NOMBRE ABAJO", W/2, 222, 8, colLine, 0)
+	txt(s, "LA MISMA SALA EN LOS DOS PC", W/2, 222, 8, colLine, 0)
 }
 
 // ---------- pantalla de pánico: parece un monitor del sistema ----------
@@ -333,82 +335,30 @@ func (a *App) drawModes(s *ebiten.Image) {
 	txt(s, "ESC VOLVER  +/- ZOOM", W/2, 224, 8, colLine, 0)
 }
 
-// ---------- salas ----------
+// ---------- online: se busca solo al compañero ----------
 
-func (a *App) drawHost(s *ebiten.Image) {
-	txt(s, "TU CODIGO", W/2, 32, 8, colDim, 0)
-	rect(s, 60, 46, 120, 36, colBg)
-	frame(s, 60, 46, 120, 36, colLine)
-	code := "...."
+func (a *App) drawOnline(s *ebiten.Image) {
 	st := NetConnecting
 	if a.nw != nil {
-		code, st = a.nw.Code, a.nw.RTCStatus()
+		st = a.nw.Status()
 	}
-	if st == NetConnecting {
-		code = "...."
-	}
-	txt(s, strings.Join(strings.Split(code, ""), " "), W/2+1, 56, 16, colAcc, 0)
-	txt(s, "DISELO A TU AMIGO", W/2, 94, 8, colInk, 0)
-	txt(s, "ESPERANDO"+dots(a.tick), 84, 116, 8, colDim, -1)
-
+	drawAvatar(s, 96, 46, 4, a.cfg.Av, a.tick, false)
+	txt(s, "SALA "+a.cfg.Room, W/2, 96, 8, colDim, 0)
 	switch st {
-	case NetOnline:
-		txt(s, "INTERNET OK", W/2, 146, 8, colOk, 0)
+	case NetWaiting:
+		txt(s, "ESPERANDO A TU", W/2, 124, 8, colInk, 0)
+		txt(s, "COMPAÑERO"+dots(a.tick), 76, 138, 8, colInk, -1)
+		txt(s, "EN SU PC: PONG > ONLINE", W/2, 168, 8, colDim, 0)
+	case NetJoining:
+		txt(s, "ENTRANDO"+dots(a.tick), 84, 130, 8, colInk, -1)
 	case NetNoInternet:
-		txt(s, "SIN INTERNET:", W/2, 140, 8, colErr, 0)
-		txt(s, "SOLO RED LOCAL", W/2, 152, 8, colErr, 0)
+		txt(s, "SIN INTERNET", W/2, 124, 8, colErr, 0)
+		txt(s, "REINTENTANDO"+dots(a.tick), 72, 140, 8, colDim, -1)
 	default:
-		txt(s, "CONECTANDO"+dots(a.tick), 80, 146, 8, colDim, -1)
+		txt(s, "CONECTANDO"+dots(a.tick), 80, 130, 8, colInk, -1)
 	}
-	txt(s, "EN EL OTRO PC:", W/2, 178, 8, colDim, 0)
-	txt(s, "PONG > UNIRSE", W/2, 192, 8, colInk, 0)
-	txt(s, "IP "+LocalIP(), W/2, 220, 8, colLine, 0)
-}
-
-func (a *App) drawJoin(s *ebiten.Image) {
-	txt(s, "ESCRIBE EL CODIGO", W/2, 30, 8, colDim, 0)
-	rect(s, 30, 42, 132, 30, colBg)
-	frame(s, 30, 42, 132, 30, colLine)
-	cur := ""
-	if (a.tick/30)%2 == 0 && a.joinStart.IsZero() {
-		cur = "_"
-	}
-	if len(a.ipInput) <= 4 && !strings.Contains(a.ipInput, ".") {
-		txt(s, strings.Join(strings.Split(a.ipInput+cur, ""), " "), 40, 50, 16, colAcc, -1)
-	} else {
-		txt(s, a.ipInput+cur, 36, 54, 8, colAcc, -1)
-	}
-	ok := btn{168, 42, 42, 30, "ipok"}
-	card(s, ok, a.hov(ok))
-	txt(s, "OK", ok.x+21, ok.y+11, 8, colInk, 0)
-	if a.status != "" {
-		col, st := colDim, a.status
-		if a.statusErr {
-			col = colErr
-		} else {
-			if a.nw != nil && a.nw.Via() == "relay" {
-				st = "POR SERVIDOR"
-			}
-			st += dots(a.tick)
-		}
-		txt(s, st, W/2, 82, 8, col, 0)
-	}
-
-	txt(s, "O ELIGE UNA SALA CERCA:", W/2, 108, 8, colDim, 0)
-	rooms := a.nw.Rooms()
-	if len(rooms) == 0 {
-		txt(s, "BUSCANDO"+dots(a.tick), 84, 132, 8, colLine, -1)
-	}
-	for i, r := range rooms {
-		if i >= 3 {
-			break
-		}
-		b := btn{10, 120 + float64(i)*30, 220, 26, ""}
-		card(s, b, a.hov(b))
-		txt(s, r.Name, b.x+10, b.y+9, 8, colInk, -1)
-		txt(s, r.Code, b.x+212, b.y+9, 8, colAcc, 1)
-	}
-	txt(s, "(TAMBIEN SIRVE SU IP)", W/2, 222, 8, colLine, 0)
+	txt(s, "LA SALA SE CAMBIA EN", W/2, 206, 8, colLine, 0)
+	txt(s, "PERSONAJE", W/2, 218, 8, colLine, 0)
 }
 
 // ---------- el juego ----------
@@ -463,12 +413,15 @@ func (a *App) drawGame(s *ebiten.Image) {
 	drawAvatar(s, 3+ox+math.Round(a.pulse1), ya+PH/2-4, 1, av1, a.tick, false)
 	drawAvatar(s, W-15+ox-math.Round(a.pulse2), yb+PH/2-4, 1, av2, a.tick+40, true)
 
+	bx, by := a.ballPos()
 	if p.Ph == PhPlay {
 		for i, t := range a.trail {
 			al := float64(i+1) / float64(len(a.trail)) * .3
 			rect(s, math.Round(t[0]+1)+ox, math.Round(t[1]+1)+oy, BS-2, BS-2, fade(colBall, al))
 		}
-		rect(s, math.Round(p.X)+ox, math.Round(p.Y)+oy, BS, BS, colBall)
+		if bx < W {
+			rect(s, math.Round(bx)+ox, math.Round(by)+oy, BS, BS, colBall)
+		}
 	} else if p.Ph == PhServe && (a.tick/7)%2 == 0 {
 		rect(s, W/2-2, H/2-2, BS, BS, colBall)
 	}

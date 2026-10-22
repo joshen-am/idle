@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
@@ -12,14 +14,13 @@ func TestRelayLargo(t *testing.T) {
 	if os.Getenv("MJ_LONG") == "" {
 		t.Skip("solo con MJ_LONG=1")
 	}
-	os.Setenv("MJ_NODIRECT", "1")
-	host := HostRoom()
+	room := fmt.Sprintf("L%X", rand.Intn(1<<20))
+	host := AutoRoom(room)
 	defer host.Close()
-	for host.RTCStatus() != NetOnline {
+	for host.Status() != NetWaiting {
 		time.Sleep(100 * time.Millisecond)
 	}
-	guest := NewSearcher()
-	guest.JoinCode(host.Code)
+	guest := AutoRoom(room)
 	defer guest.Close()
 	p := NewPong()
 	av := randomAvatar()

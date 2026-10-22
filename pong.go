@@ -65,6 +65,18 @@ type Pong struct {
 	RemoteRight bool
 	Grace       float64
 	since       float64 // tiempo desde que la bola cruzó la paleta derecha
+
+	// Ancla: dónde y cuándo fue el último saque o golpe. Desde ahí la bola es predecible
+	// (línea recta con rebotes arriba/abajo), así el otro PC la calcula sin saltos.
+	T                float64 // reloj de la partida
+	AX, AY, AVX, AVY float64
+	AT               float64
+	ASeq             uint8
+}
+
+func (p *Pong) setAnchor() {
+	p.AX, p.AY, p.AVX, p.AVY, p.AT = p.X, p.Y, p.VX, p.VY, p.T
+	p.ASeq++
 }
 
 func NewPong() *Pong {
@@ -111,6 +123,7 @@ func (p *Pong) Step(in1 Input, in2 *Input, dt float64) {
 	if p.Paused || p.Ph == PhDC {
 		return
 	}
+	p.T += dt
 	p.A = movePaddle(p.A, in1, dt)
 	if in2 != nil {
 		p.B = movePaddle(p.B, *in2, dt)
@@ -138,12 +151,12 @@ func (p *Pong) moveBall(dt float64) {
 		h := dt / float64(n)
 		p.X += p.VX * h
 		p.Y += p.VY * h
-		if p.Y < 0 {
-			p.Y, p.VY = 0, math.Abs(p.VY)
+		if p.Y < 0 { // rebote como espejo (igual que advanceBall)
+			p.Y, p.VY = -p.Y, math.Abs(p.VY)
 			p.emit(EvWall)
 		}
 		if p.Y > H-BS {
-			p.Y, p.VY = H-BS, -math.Abs(p.VY)
+			p.Y, p.VY = 2*(H-BS)-p.Y, -math.Abs(p.VY)
 			p.emit(EvWall)
 		}
 		if p.VX < 0 && p.X <= PX+PW && p.X+BS >= PX && p.Y+BS >= p.A && p.Y <= p.A+PH {
@@ -182,6 +195,7 @@ func (p *Pong) RemoteHit(ballY, padB float64) bool {
 	p.Y, p.B = ballY, padB
 	p.hit(2)
 	p.B = saved
+	p.AT -= back // el golpe fue hace "back" segundos
 	p.moveBall(back)
 	return true
 }
@@ -192,6 +206,7 @@ func (p *Pong) launch() {
 	p.X, p.Y, p.Sp, p.since = W/2-BS/2, H/2-BS/2, 125, 0
 	p.VX = p.Serve * p.Sp * math.Cos(ang)
 	p.VY = p.Sp * math.Sin(ang)
+	p.setAnchor()
 	p.emit(EvServe)
 }
 
@@ -214,6 +229,7 @@ func (p *Pong) hit(side int) {
 		p.X = W - PX - PW - BS
 		p.emit(EvHit2)
 	}
+	p.setAnchor()
 }
 
 func (p *Pong) point(side int) {

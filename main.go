@@ -6,12 +6,10 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -27,7 +25,7 @@ type Config struct {
 	Spot   int // 0 abajo-derecha, 1 abajo-centro, 2 abajo-izquierda
 	HasPos bool
 	X, Y   int
-	LastIP string
+	Room   string // sala online: los dos entran a la misma y se encuentran solos
 }
 
 var winSizes = []int{240, 300, 360, 480}
@@ -52,6 +50,9 @@ func loadCfg() Config {
 		c.Av, c.HasAv = randomAvatar(), true
 	}
 	c.Av = c.Av.fix()
+	if c.Room = cleanName(c.Room); c.Room == "" {
+		c.Room = "IDLE"
+	}
 	return c
 }
 
@@ -72,8 +73,7 @@ type Scene int
 const (
 	SMenu Scene = iota
 	SPong
-	SHost
-	SJoin
+	SOnline
 	SGame
 	SProfile
 )
@@ -124,13 +124,15 @@ type App struct {
 	lat                          float64 // demora estimada de ida (invitado)
 	corrX, corrY                 float64 // corrección pendiente de la bola (invitado)
 	targetB                      float64 // paleta del invitado, suavizada (anfitrión)
+	dispX, dispY                 float64 // bola mostrada (anfitrión)
+	botPrev                      [2]float64
+	botPrevOK                    bool
+	botJump                      float64
 	shake, flash, pulse1, pulse2 float64
 	trail                        [][2]float64
 
 	// red
 	nw        *Net
-	joinStart time.Time
-	ipInput   string
 	status    string
 	statusErr bool
 
@@ -163,7 +165,7 @@ func (a *App) go_(s Scene) {
 
 func (a *App) back() {
 	switch a.scene {
-	case SGame, SHost, SJoin:
+	case SGame, SOnline:
 		a.nw.Close()
 		a.nw, a.pong = nil, nil
 		a.go_(SPong)
@@ -177,54 +179,6 @@ func (a *App) startGame(m Mode) {
 	a.lastEv, a.evReady, a.rematch, a.lastRematch = [EvCount]uint8{}, m != ModeGuest, 0, 0
 	a.ptrActive, a.trail = false, nil
 	a.go_(SGame)
-}
-
-func (a *App) hostRoom() {
-	a.nw.Close()
-	a.go_(SHost)
-	a.nw = HostRoom()
-}
-
-func (a *App) openJoin() {
-	a.nw.Close()
-	a.go_(SJoin)
-	a.nw = NewSearcher()
-}
-
-func (a *App) joinAddr(addr *net.UDPAddr) {
-	a.nw.Close()
-	a.nw = NewSearcher()
-	if err := a.nw.JoinLAN(addr); err != nil {
-		a.status, a.statusErr = "ERROR DE RED", true
-		return
-	}
-	a.joinStart = time.Now()
-	a.status, a.statusErr = "CONECTANDO", false
-}
-
-// joinInput: lo escrito puede ser el código de 4 letras (por internet) o una IP (red local).
-func (a *App) joinInput() {
-	in := strings.ToUpper(strings.TrimSpace(a.ipInput))
-	if strings.Contains(in, ".") {
-		ip := net.ParseIP(in).To4()
-		if ip == nil {
-			a.status, a.statusErr = "IP NO VALIDA", true
-			return
-		}
-		a.cfg.LastIP = in
-		a.saveCfg()
-		a.joinAddr(&net.UDPAddr{IP: ip, Port: GamePort})
-		return
-	}
-	if len(in) != 4 {
-		a.status, a.statusErr = "EL CODIGO TIENE 4", true
-		return
-	}
-	a.nw.Close()
-	a.nw = NewSearcher()
-	a.nw.JoinCode(in)
-	a.joinStart = time.Now()
-	a.status, a.statusErr = "CONECTANDO", false
 }
 
 // ---------- ventana ----------
@@ -314,19 +268,20 @@ func menuBtn(i int) btn {
 	return btn{84, y, 148, 20, menuRows[i].id}
 }
 
+func profY(r int) float64 { return 102 + float64(r)*18 }
+
 func profBtn(r, d int) btn {
 	x := 104.0
 	if d > 0 {
 		x = 220
 	}
-	return btn{x, 104 + float64(r)*20 - 2, 12, 12, "pf:" + string(rune('0'+r)) + ":" + map[int]string{-1: "-1", 1: "1"}[d]}
+	return btn{x, profY(r) - 2, 12, 12, "pf:" + string(rune('0'+r)) + ":" + map[int]string{-1: "-1", 1: "1"}[d]}
 }
 
 var modeItems = []struct{ id, title, sub string }{
 	{"local", "MISMO PC", "W/S CONTRA FLECHAS"},
 	{"cpu", "VS CPU", "PRACTICA SOLO"},
-	{"host", "CREAR SALA", "TE DA UN CODIGO"},
-	{"join", "UNIRSE", "ESCRIBES EL CODIGO"},
+	{"online", "ONLINE", "CON TU COMPAÑERO"},
 }
 
 func (a *App) buttons() []btn {
@@ -349,16 +304,7 @@ func (a *App) buttons() []btn {
 		for r := 0; r < 4; r++ {
 			bs = append(bs, profBtn(r, -1), profBtn(r, 1))
 		}
-		bs = append(bs, btn{4, 180, W - 8, 18, "pfname"})
-	case SJoin:
-		if a.nw != nil {
-			for i, r := range a.nw.Rooms() {
-				if i < 3 {
-					bs = append(bs, btn{10, 120 + float64(i)*30, 220, 26, "room:" + r.Addr.String()})
-				}
-			}
-		}
-		bs = append(bs, btn{168, 42, 42, 30, "ipok"})
+		bs = append(bs, btn{4, profY(4) - 4, W - 8, 16, "pfname"}, btn{4, profY(5) - 4, W - 8, 16, "pfroom"})
 	}
 	return bs
 }
@@ -399,6 +345,8 @@ func (a *App) click(id string) {
 		a.go_(SProfile)
 	case id == "pfname":
 		a.sel = 4
+	case id == "pfroom":
+		a.sel = 5
 	case strings.HasPrefix(id, "pf:"):
 		d := 1
 		if strings.HasSuffix(id, ":-1") {
@@ -409,18 +357,10 @@ func (a *App) click(id string) {
 		a.startGame(ModeLocal)
 	case id == "cpu":
 		a.startGame(ModeCPU)
-	case id == "host":
-		a.hostRoom()
-	case id == "join":
-		a.openJoin()
-	case id == "ipok":
-		if a.joinStart.IsZero() {
-			a.joinInput()
-		}
-	case strings.HasPrefix(id, "room:"):
-		if addr, err := net.ResolveUDPAddr("udp4", strings.TrimPrefix(id, "room:")); err == nil {
-			a.joinAddr(addr)
-		}
+	case id == "online":
+		a.nw.Close()
+		a.nw = AutoRoom(a.cfg.Room)
+		a.go_(SOnline)
 	}
 }
 
@@ -467,7 +407,7 @@ func (a *App) Update() error {
 		v := clamp(a.cpuHist[len(a.cpuHist)-1]+(rand.Float64()-.5)*8, 4, 38)
 		a.cpuHist = append(a.cpuHist[1:], v)
 	}
-	typing := a.scene == SJoin || (a.scene == SProfile && a.sel == 4)
+	typing := a.scene == SProfile && a.sel >= 4
 	if !a.panic {
 		if pressed(ebiten.KeyEscape) {
 			a.back()
@@ -534,7 +474,7 @@ func (a *App) Update() error {
 			if pressed(ebiten.KeyArrowUp, ebiten.KeyW) {
 				a.sel = (a.sel + len(modeItems) - 1) % len(modeItems)
 			}
-			for i, k := range []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3, ebiten.Key4} {
+			for i, k := range []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3} {
 				if pressed(k) {
 					a.click(modeItems[i].id)
 				}
@@ -544,12 +484,14 @@ func (a *App) Update() error {
 			}
 		case SProfile:
 			a.updateProfile()
-		case SHost:
+		case SOnline:
 			if a.nw != nil && a.nw.Connected() {
-				a.startGame(ModeHost)
+				if a.nw.IsHost() {
+					a.startGame(ModeHost)
+				} else {
+					a.startGame(ModeGuest)
+				}
 			}
-		case SJoin:
-			a.updateJoin()
 		case SGame:
 			a.updateGame()
 		}
@@ -597,78 +539,27 @@ func (a *App) updateProfile() {
 		}
 		return
 	}
+	field := &a.cfg.Av.Name // fila 4: nombre, fila 5: sala
+	if a.sel == 5 {
+		field = &a.cfg.Room
+	}
 	changed := false
 	for _, r := range ebiten.AppendInputChars(nil) {
-		if n := cleanName(a.cfg.Av.Name + string(r)); n != a.cfg.Av.Name {
-			a.cfg.Av.Name, changed = n, true
+		if n := cleanName(*field + string(r)); n != *field {
+			*field, changed = n, true
 		}
 	}
-	if pressed(ebiten.KeyBackspace) && a.cfg.Av.Name != "" {
-		a.cfg.Av.Name, changed = a.cfg.Av.Name[:len(a.cfg.Av.Name)-1], true
+	if pressed(ebiten.KeyBackspace) && *field != "" {
+		*field, changed = (*field)[:len(*field)-1], true
 	}
 	if pressed(ebiten.KeyEnter) {
 		a.sel = 0
 	}
+	if a.cfg.Room == "" && a.sel != 5 {
+		a.cfg.Room, changed = "IDLE", true
+	}
 	if changed {
 		a.saveCfg()
-	}
-}
-
-func (a *App) updateJoin() {
-	for _, r := range ebiten.AppendInputChars(nil) {
-		if r >= 'a' && r <= 'z' {
-			r -= 'a' - 'A'
-		}
-		if (r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r == '.') && len(a.ipInput) < 15 {
-			a.ipInput += string(r)
-			if a.joinStart.IsZero() {
-				a.status = ""
-			}
-		}
-	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) && len(a.ipInput) > 0 {
-		a.ipInput = a.ipInput[:len(a.ipInput)-1]
-	}
-	rooms := a.nw.Rooms()
-	if len(rooms) > 0 && a.joinStart.IsZero() && os.Getenv("MJ_AUTOJOIN") == "lan" { // solo para pruebas
-		a.joinAddr(rooms[0].Addr)
-	}
-	if code := os.Getenv("MJ_AUTOJOIN"); len(code) == 4 && a.joinStart.IsZero() && a.status == "" { // solo para pruebas
-		a.ipInput = code
-		a.joinInput()
-	}
-	if pressed(ebiten.KeyEnter, ebiten.KeyNumpadEnter) && a.joinStart.IsZero() {
-		if a.ipInput == "" && len(rooms) > 0 {
-			a.joinAddr(rooms[0].Addr)
-		} else {
-			a.joinInput()
-		}
-	}
-	if a.joinStart.IsZero() {
-		return
-	}
-	if a.nw.Connected() {
-		a.joinStart = time.Time{}
-		a.startGame(ModeGuest)
-		return
-	}
-	fail := ""
-	switch a.nw.RTCStatus() {
-	case NetNoInternet:
-		fail = "SIN INTERNET"
-	case NetNoRoom:
-		fail = "NO EXISTE ESA SALA"
-	case NetFailed:
-		fail = "NO SE PUDO CONECTAR"
-	}
-	if fail == "" && time.Since(a.joinStart) > 30*time.Second {
-		fail = "NO RESPONDE"
-	}
-	if fail != "" {
-		a.joinStart = time.Time{}
-		a.nw.Close()
-		a.nw = NewSearcher()
-		a.status, a.statusErr = fail, true
 	}
 }
 
@@ -774,18 +665,13 @@ func (a *App) updateGame() {
 		if p.Paused {
 			panicFlag = 1
 		}
-		p.RemoteRight, p.Grace = true, .45
-		if a.nw.Via() == "relay" {
-			p.Grace = .9 // por el servidor los avisos tardan más
-		}
+		p.RemoteRight, p.Grace = true, .9 // espera el aviso de golpe del otro (viaja por el servidor)
 		if h, ok := a.nw.TakeHit(); ok && h.Idx == p.Ev[EvHit2] && int(h.Sum) == p.S1+p.S2 {
 			if p.RemoteHit(h.Y, h.B) && botMode {
 				logf("prueba: golpe remoto aplicado (%.2fs después)", p.since)
 			}
 		}
-		if botMode && a.tick%600 == 0 {
-			logf("prueba: marcador %d-%d golpes %d/%d", p.S1, p.S2, p.Ev[EvHit1], p.Ev[EvHit2])
-		}
+
 		p.Step(a.myInput(1), nil, Dt)
 		a.nw.SendState(p, panicFlag)
 	case ModeGuest:
@@ -801,15 +687,22 @@ func (a *App) updateGame() {
 					}
 					a.lat = a.lat*.8 + r/2*.2
 				}
-				if !a.hitPending { // mientras espero confirmación, sigo mostrando mi rebote
-					// el paquete muestra el pasado: adelanto la bola lo que tardó en llegar
-					tx, ty, vx, vy := advanceBall(float64(st.X), float64(st.Y), float64(st.VX), float64(st.VY), a.lat)
-					if p.Ph != PhPlay || st.Ph != PhPlay || math.Abs(tx-p.X) > 30 || math.Abs(ty-p.Y) > 30 || (vx > 0) != (p.VX > 0) {
+				if st.Ph != PhPlay {
+					p.X, p.Y, a.corrX, a.corrY = float64(st.X), float64(st.Y), 0, 0
+				} else if !a.hitPending { // mientras espero confirmación, sigo mostrando mi rebote
+					// La bola se calcula desde el último golpe o saque (el "ancla"): es una línea
+					// recta con rebotes, así que la calculo igual que el anfitrión, adelantada lo que
+					// tardó el paquete. Si hay diferencia, se corrige de a poco (la bola acelera un
+					// instante en vez de saltar).
+					age := float64(st.AAge)/1000 + a.lat
+					tx, ty, vx, vy := advanceBall(float64(st.AX), float64(st.AY), float64(st.AVX), float64(st.AVY), age)
+					if p.Ph != PhPlay || math.Hypot(tx-p.X, ty-p.Y) > 170 {
 						p.X, p.Y, a.corrX, a.corrY = tx, ty, 0, 0
 					} else {
-						a.corrX, a.corrY = tx-p.X, ty-p.Y // se corrige de a poco, sin saltos
+						a.corrX, a.corrY = tx-p.X, ty-p.Y
 					}
 					p.VX, p.VY = vx, vy
+					p.Sp = math.Hypot(vx, vy) // para que mis rebotes predichos salgan a la misma velocidad
 				}
 				p.Tm = float64(st.Tm)
 				p.S1, p.S2, p.Ph, p.Winner, p.Ev = int(st.S1), int(st.S2), st.Ph, int(st.Winner), st.Ev
@@ -820,8 +713,16 @@ func (a *App) updateGame() {
 				}
 			}
 			if p.Ph == PhPlay && !p.Paused { // entre paquetes: la bola sigue su camino
-				p.X, p.Y, p.VX, p.VY = advanceBall(p.X+a.corrX*.25, p.Y+a.corrY*.25, p.VX, p.VY, Dt)
-				a.corrX, a.corrY = a.corrX*.75, a.corrY*.75
+				// la corrección se reparte: como mucho 6 px extra por cuadro (sin saltos)
+				cx, cy := limitVec(a.corrX*.2, a.corrY*.2, 6)
+				a.corrX, a.corrY = a.corrX-cx, a.corrY-cy
+				p.X, p.Y, p.VX, p.VY = advanceBall(p.X+cx, p.Y+cy, p.VX, p.VY, Dt)
+				// predigo el golpe del otro con su paleta: casi siempre acierta y la bola no espera
+				if p.VX < 0 && p.X <= PX+PW && p.X+BS >= PX && p.Y+BS >= p.A && p.Y <= p.A+PH {
+					saved, err := p.Ev, p.cpuErr
+					p.hit(1)
+					p.Ev, p.cpuErr = saved, err
+				}
 			}
 			// mis golpes los decido yo, con lo que veo en mi pantalla
 			if !a.hitPending && p.Ph == PhPlay && !p.Paused && p.VX > 0 &&
@@ -835,8 +736,8 @@ func (a *App) updateGame() {
 				a.pulse2 = 1
 				a.skipHit2 = a.hitMsg.Idx + 1 // que no suene de nuevo al confirmarse
 			}
-			if d := a.tick - a.hitAt; a.hitPending && (d%3 == 0 && !a.nw.Relayed() || d == 0 || d == 10 || d == 25 || d == 45) {
-				a.nw.SendHit(a.hitMsg) // por el servidor, pocas veces (tiene límite de mensajes)
+			if d := a.tick - a.hitAt; a.hitPending && (d == 0 || d == 10 || d == 25 || d == 45) {
+				a.nw.SendHit(a.hitMsg) // pocas veces: el servidor tiene límite de mensajes
 			}
 			p.A += (a.targetA - p.A) * .5
 		}
@@ -850,7 +751,7 @@ func (a *App) updateGame() {
 			a.nw.SendInput(p.B, a.rematch, panicFlag)
 		}
 	}
-	if (a.mode == ModeHost || a.mode == ModeGuest) && (a.tick%20 == 0 && !a.nw.Relayed() || a.tick%180 == 0) {
+	if (a.mode == ModeHost || a.mode == ModeGuest) && a.tick%180 == 30 {
 		a.nw.SendAvatar(a.cfg.Av)
 	}
 
@@ -873,8 +774,27 @@ func (a *App) updateGame() {
 	}
 	a.lastEv = p.Ev
 
+	// en el anfitrión la bola puede saltar cuando llega tarde un golpe del otro: se suaviza
+	if d := math.Hypot(p.X-a.dispX, p.Y-a.dispY); a.mode == ModeHost && p.Ph == PhPlay && d > 7 && d < 200 {
+		mx, my := limitVec(p.X-a.dispX, p.Y-a.dispY, 11) // como mucho el doble de rápido
+		a.dispX, a.dispY = a.dispX+mx, a.dispY+my
+	} else {
+		a.dispX, a.dispY = p.X, p.Y
+	}
+	if botMode { // pruebas: el salto más grande de la bola entre dos cuadros
+		bx, by := a.ballPos()
+		if p.Ph == PhPlay && a.botPrevOK {
+			a.botJump = math.Max(a.botJump, math.Hypot(bx-a.botPrev[0], by-a.botPrev[1]))
+		}
+		a.botPrev, a.botPrevOK = [2]float64{bx, by}, p.Ph == PhPlay
+		if a.tick%600 == 0 {
+			logf("prueba: modo %d marcador %d-%d golpes %d/%d salto max %.1f px", a.mode, p.S1, p.S2, p.Ev[EvHit1], p.Ev[EvHit2], a.botJump)
+			a.botJump = 0
+		}
+	}
 	if p.Ph == PhPlay && !p.Paused {
-		a.trail = append(a.trail, [2]float64{p.X, p.Y})
+		bx, by := a.ballPos()
+		a.trail = append(a.trail, [2]float64{bx, by})
 		if len(a.trail) > 7 {
 			a.trail = a.trail[1:]
 		}
@@ -885,6 +805,21 @@ func (a *App) updateGame() {
 	a.flash = math.Max(0, a.flash-Dt*2)
 	a.pulse1 = math.Max(0, a.pulse1-Dt*4)
 	a.pulse2 = math.Max(0, a.pulse2-Dt*4)
+}
+
+func (a *App) ballPos() (float64, float64) {
+	if a.mode == ModeHost { // mientras espera el golpe del otro, la bola queda en su paleta
+		return math.Min(a.dispX, W-PX-PW-BS+2), a.dispY
+	}
+	return a.pong.X, a.pong.Y
+}
+
+// limitVec acorta el vector (x, y) a un largo máximo.
+func limitVec(x, y, max float64) (float64, float64) {
+	if d := math.Hypot(x, y); d > max {
+		return x * max / d, y * max / d
+	}
+	return x, y
 }
 
 // advanceBall mueve la bola t segundos rebotando arriba/abajo (sin paletas), para predecir.
