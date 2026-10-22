@@ -1,0 +1,10 @@
+=== RUN   TestHookMac
+    hook_darwin_test.go:20: ¿permiso de Accesibilidad?: true
+    hook_darwin_test.go:26: event tap sin permiso: 0 (0 = macOS no lo deja, lo esperado)
+--- PASS: TestHookMac (0.00s)
+=== RUN   TestGestoYTeclas
+18:39:34.879 teclado: modo juego
+18:39:34.880 teclado: modo trabajo
+--- PASS: TestGestoYTeclas (0.00s)
+PASS
+ok  	idle	0.070s
