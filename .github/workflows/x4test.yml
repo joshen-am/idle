@@ -16,6 +16,11 @@ jobs:
         env: { MJ_REAL: "1", MJ_NOSOUND: "1", MJ_LOG_STDOUT: "1" }
         shell: bash
         run: go test -run TestX4Real -v -count=1 -timeout 8m . 2>&1 | tee out.txt; exit ${PIPESTATUS[0]}
+      - name: Pong de 4 solo por el servidor
+        if: always()
+        env: { MJ_REAL: "1", MJ_NOSOUND: "1", MJ_LOG_STDOUT: "1", MJ_NOLAN: "1" }
+        shell: bash
+        run: go test -run TestX4Real -v -count=1 -timeout 8m . 2>&1 | tee -a out.txt; exit ${PIPESTATUS[0]}
       - name: Guardar registro
         if: always()
         shell: bash
