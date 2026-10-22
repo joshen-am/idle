@@ -36,20 +36,28 @@ func TestDiario(t *testing.T) {
 		c.LastDiary = first
 		d := buildDiary(&c, now)
 		t.Logf("=== N.%d %s (%d paginas)", d.No, d.Date, len(d.Pages))
-		for i, p := range d.Pages {
-			if len(p) > diaryRows {
-				t.Fatalf("pagina %d muy larga", i)
-			}
-			for _, l := range p {
-				if len([]rune(l.s)) > diaryCols {
-					t.Fatalf("linea larga: %q", l.s)
+		if len(d.Pages) < 3 {
+			t.Fatalf("muy pocas paginas: %d", len(d.Pages))
+		}
+		for _, p := range d.Pages {
+			t.Logf("-- %s %s", p.Section, p.Head)
+			check := func(s string) {
+				if strings.ContainsAny(s, "ÁÉÍÓÚÑáéíóúñ{}") {
+					t.Fatalf("tilde o marcador: %q", s)
 				}
-				if strings.ContainsAny(l.s, "ÁÉÍÓÚÑáéíóúñ{}") {
-					t.Fatalf("tilde o marcador: %q", l.s)
-				}
-				t.Log(l.s)
 			}
-			t.Log("---")
+			check(p.Head)
+			check(p.Ad)
+			for _, a := range p.Arts {
+				check(a.Title + a.Text)
+				t.Logf("   [%v] %s: %s", a.Photo != nil, a.Title, a.Text)
+			}
+			for _, r := range p.Results {
+				t.Logf("   %s %d-%d %s", r.W, r.SW, r.SL, r.L)
+			}
+			if p.Ad != "" {
+				t.Logf("   AVISO: %s", p.Ad)
+			}
 		}
 	}
 }

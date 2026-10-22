@@ -2,6 +2,7 @@ package main
 
 import (
 	"image/color"
+	"math"
 	"math/rand"
 	"strings"
 
@@ -20,6 +21,8 @@ type part struct {
 	rows []string
 	eyeY int // fila donde van los ojos (solo cuerpos)
 	col  color.NRGBA
+	col2 color.NRGBA // gorros: color de las 'o'
+	anim bool        // color que va cambiando (arcoíris)
 }
 
 var bodies = []part{
@@ -83,6 +86,107 @@ var bodies = []part{
 		"..l.l..l.l..",
 		"..l.l..l.l..",
 	}},
+	// de la tienda (2.3)
+	{name: "PULPO", eyeY: 2, rows: []string{
+		"...######...",
+		"..########..",
+		".##########.",
+		".##########.",
+		".##########.",
+		"..########..",
+		".l.l.ll.l.l.",
+		"l.l..ll..l.l",
+	}},
+	{name: "HONGO", eyeY: 3, rows: []string{
+		"..########..",
+		".##########.",
+		"############",
+		"...######...",
+		"...######...",
+		"...######...",
+		"...l....l...",
+		"..ll....ll..",
+	}},
+	{name: "SLIME", eyeY: 4, rows: []string{
+		"............",
+		"............",
+		"....####....",
+		"..########..",
+		".##########.",
+		"############",
+		"############",
+		"############",
+	}},
+	{name: "PINGUINO", eyeY: 1, rows: []string{
+		"...######...",
+		"..########..",
+		"..########..",
+		".##########.",
+		".##########.",
+		"..########..",
+		"...ll..ll...",
+		"..lll..lll..",
+	}},
+	{name: "CONEJO", eyeY: 3, rows: []string{
+		"...#....#...",
+		"...#....#...",
+		"..########..",
+		"..########..",
+		"..########..",
+		"..########..",
+		"..l.l..l.l..",
+		"..ll....ll..",
+	}},
+	{name: "ALIEN", eyeY: 3, rows: []string{
+		".l........l.",
+		"..l......l..",
+		"..########..",
+		".##########.",
+		"############",
+		".##########.",
+		"..l..ll..l..",
+		".l...ll...l.",
+	}},
+	{name: "OSO", eyeY: 2, rows: []string{
+		".##......##.",
+		".##########.",
+		"..########..",
+		"..########..",
+		".##########.",
+		".##########.",
+		"..ll....ll..",
+		"..ll....ll..",
+	}},
+	{name: "NUBE", eyeY: 3, rows: []string{
+		"............",
+		"....###.....",
+		"..#######...",
+		".##########.",
+		"############",
+		"############",
+		".##########.",
+		"............",
+	}},
+	{name: "BUHO", eyeY: 2, rows: []string{
+		"..#......#..",
+		"..########..",
+		".##########.",
+		"############",
+		"############",
+		"..########..",
+		"...l....l...",
+		"..ll....ll..",
+	}},
+	{name: "COHETE", eyeY: 3, rows: []string{
+		".....##.....",
+		"....####....",
+		"...######...",
+		"..########..",
+		"..########..",
+		".##########.",
+		".l.l....l.l.",
+		"l...l..l...l",
+	}},
 }
 
 var avColors = []part{
@@ -99,9 +203,21 @@ var avColors = []part{
 	{name: "NOCHE", col: hex(0x5a5f8a)},
 	{name: "CORAL", col: hex(0xff8f70)},
 	{name: "BOSQUE", col: hex(0x4f8a5b)},
+	{name: "CEREZA", col: hex(0xc8384a)},
+	{name: "TURQUESA", col: hex(0x3fc1c0)},
+	{name: "LAVANDA", col: hex(0xc7b8f0)},
+	{name: "CHOCOLATE", col: hex(0x7a5236)},
+	{name: "NIEVE", col: hex(0xeeeeea)},
+	{name: "CARBON", col: hex(0x3c3c40)},
+	{name: "MOSTAZA", col: hex(0xd8a530)},
+	{name: "CHICLE", col: hex(0xff8fd0)},
+	{name: "OLIVA", col: hex(0x8a8f3c)},
+	{name: "CIRUELA", col: hex(0x7a3f7f)},
+	{name: "ARCOIRIS", col: hex(0xd98aa6), anim: true},
 }
 
-var eyeNames = []string{"PUNTOS", "GRANDES", "FELICES", "DORMIDO", "PICARO", "LENTES"}
+var eyeNames = []string{"PUNTOS", "GRANDES", "FELICES", "DORMIDO", "PICARO", "LENTES",
+	"ENOJADO", "TRISTE", "CURIOSO", "MINI", "ANIME", "LASER", "3D", "VISOR", "CICLOPE", "ESTRELLAS"}
 
 var hats = []part{
 	{name: "NADA"},
@@ -156,6 +272,57 @@ var hats = []part{
 		"..########..",
 		"...######...",
 	}},
+	// de la tienda (2.3); las 'o' van en el segundo color
+	{name: "VAQUERO", col: hex(0x9a6a3a), col2: hex(0x5a3a1a), rows: []string{
+		"....####....",
+		"...#oooo#...",
+		"############",
+	}},
+	{name: "LANA", col: hex(0xc8384a), col2: hex(0xf0f0f0), rows: []string{
+		".....oo.....",
+		"...######...",
+		"..oooooooo..",
+	}},
+	{name: "MAGO", col: hex(0x5a3f9a), col2: hex(0xf2c94c), rows: []string{
+		"......##....",
+		".....#o##...",
+		"..########..",
+	}},
+	{name: "CUERNOS", col: hex(0xd8403a), rows: []string{
+		"..#......#..",
+		"..##....##..",
+		"............",
+	}},
+	{name: "PIRATA", col: hex(0x2a2a2a), col2: hex(0xf0f0f0), rows: []string{
+		"...######...",
+		"..###oo###..",
+		"############",
+	}},
+	{name: "ANTENAS", col: hex(0x3a3a3a), col2: hex(0xff8fd0), rows: []string{
+		"..o......o..",
+		"...#....#...",
+		"....#..#....",
+	}},
+	{name: "PUNK", col: hex(0xff4fa0), rows: []string{
+		".....##.....",
+		".....##.....",
+		"....####....",
+	}},
+	{name: "NAVIDAD", col: hex(0xc8384a), col2: hex(0xf0f0f0), rows: []string{
+		"......###.o.",
+		"....####..#.",
+		"..oooooooo..",
+	}},
+	{name: "PAJARO", col: hex(0xf2c94c), col2: hex(0xe8803a), rows: []string{
+		"....o##.....",
+		"....####....",
+		"....#..#....",
+	}},
+	{name: "BIRRETE", col: hex(0x2a2a2a), col2: hex(0xe8b84a), rows: []string{
+		"............",
+		"############",
+		".o.######...",
+	}},
 }
 
 var funNames = []string{"BYTE", "PIXEL", "NUBE", "CHISPA", "TOFU", "MOCHI", "COMETA", "BIT"}
@@ -191,6 +358,29 @@ func cleanName(s string) string {
 }
 
 func (av Avatar) Col() color.NRGBA { return avColors[int(av.Color)%len(avColors)].col }
+
+// rainbow: color del arcoíris en el momento t.
+func rainbow(t int) color.NRGBA {
+	h := float64(t%360) / 60
+	x := 1 - math.Abs(math.Mod(h, 2)-1)
+	r, g, b := 0.0, 0.0, 0.0
+	switch int(h) {
+	case 0:
+		r, g = 1, x
+	case 1:
+		r, g = x, 1
+	case 2:
+		g, b = 1, x
+	case 3:
+		g, b = x, 1
+	case 4:
+		r, b = x, 1
+	default:
+		r, b = 1, x
+	}
+	m := func(v float64) uint8 { return uint8(110 + v*120) }
+	return color.NRGBA{m(r), m(g), m(b), 255}
+}
 
 func (av Avatar) DisplayName() string {
 	if av.Name == "" {
@@ -244,6 +434,9 @@ func drawAvatarPose(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip 
 	av = av.fix()
 	b := bodies[av.Body]
 	c := av.Col()
+	if avColors[av.Color].anim {
+		c = rainbow(t * 2)
+	}
 	if pose.SX == 0 {
 		pose.SX = 1
 	}
@@ -284,14 +477,18 @@ func drawAvatarPose(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip 
 	}
 	// ojos (parpadean cada tanto)
 	ink := colBg
+	if int(c.R)*3+int(c.G)*6+int(c.B) < 900 { // cuerpo muy oscuro: ojos claros
+		ink = colInk
+	}
 	ey := b.eyeY
 	style := int(av.Eyes)
 	if pose.Eyes >= 0 {
 		style = pose.Eyes
 	}
-	if !pose.Still && t%200 < 7 && style != 5 {
+	if !pose.Still && t%200 < 7 && style != 5 && style != 12 && style != 13 {
 		style = 3
 	}
+	red, blue, gold, white := hex(0xe0404a), hex(0x4a8ae0), hex(0xf2c94c), hex(0xf4f4f0)
 	for side, ex := range []int{3 + pose.EyeDX, 7 + pose.EyeDX} {
 		var on [][2]int
 		switch style {
@@ -319,10 +516,73 @@ func drawAvatarPose(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip 
 			}
 		case 5: // lentes
 			on = [][2]int{{0, 0}, {1, 0}, {0, 1}, {1, 1}}
+		case 6: // enojado: el lado de adentro más bajo
+			if side == 0 {
+				on = [][2]int{{0, 0}, {0, 1}, {1, 1}}
+			} else {
+				on = [][2]int{{1, 0}, {0, 1}, {1, 1}}
+			}
+		case 7: // triste
+			if side == 0 {
+				on = [][2]int{{1, 0}, {0, 1}, {1, 1}}
+			} else {
+				on = [][2]int{{0, 0}, {0, 1}, {1, 1}}
+			}
+		case 8: // curioso: mira arriba
+			on = [][2]int{{0, 0}, {1, 0}}
+		case 9: // mini
+			if side == 0 {
+				on = [][2]int{{1, 0}}
+			} else {
+				on = [][2]int{{0, 0}}
+			}
+		case 10: // anime: con brillo
+			on = [][2]int{{0, 0}, {1, 0}, {0, 1}, {1, 1}}
+			for _, o := range on {
+				cell(ex+o[0], ey+o[1], ink)
+			}
+			cell(ex, ey, white)
+			on = nil
+		case 11: // láser
+			for _, o := range [][2]int{{0, 0}, {1, 0}, {0, 1}, {1, 1}} {
+				cell(ex+o[0], ey+o[1], red)
+			}
+		case 12: // lentes 3D
+			col := red
+			if side == 1 {
+				col = blue
+			}
+			for _, o := range [][2]int{{0, 0}, {1, 0}, {0, 1}, {1, 1}} {
+				cell(ex+o[0], ey+o[1], col)
+			}
+		case 14: // cíclope: un solo ojo grande al medio
+			if side == 0 {
+				for _, o := range [][2]int{{0, 0}, {1, 0}, {0, 1}, {1, 1}} {
+					cell(5+pose.EyeDX+o[0], ey+o[1], white)
+				}
+				cell(5+pose.EyeDX+1, ey+1, ink)
+			}
+		case 15: // estrellas
+			for _, o := range [][2]int{{0, 0}, {1, 0}, {0, 1}, {1, 1}} {
+				cell(ex+o[0], ey+o[1], gold)
+			}
+			cell(ex+side, ey+side, white)
 		}
 		for _, o := range on {
 			cell(ex+o[0], ey+o[1], ink)
 		}
+	}
+	if style == 12 {
+		for i := 5; i <= 6; i++ {
+			cell(i+pose.EyeDX, ey, ink)
+		}
+	}
+	if style == 13 { // visor
+		for i := 2; i <= 9; i++ {
+			cell(i, ey, hex(0x3fc1c0))
+			cell(i, ey+1, hex(0x2a8a8a))
+		}
+		cell(3+pose.EyeDX+(t/20)%6, ey, white)
 	}
 	if style == 5 {
 		for i := 2; i <= 9; i++ {
@@ -336,8 +596,11 @@ func drawAvatarPose(dst *ebiten.Image, x, y, sc float64, av Avatar, t int, flip 
 	if h := hats[av.Hat]; h.rows != nil {
 		for r, row := range h.rows {
 			for i, chr := range row {
-				if chr == '#' {
+				switch chr {
+				case '#':
 					cell(i, r-3, h.col)
+				case 'o':
+					cell(i, r-3, h.col2)
 				}
 			}
 		}

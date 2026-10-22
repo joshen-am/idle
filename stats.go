@@ -41,7 +41,7 @@ type Profile struct {
 	Wins map[string]int
 }
 
-var gameNames = map[string]string{"pong": "PONG"}
+var gameNames = map[string]string{"pong": "PONG", "pong4": "X4"}
 
 func dayKey(t time.Time) string { return t.Format("2006-01-02") }
 
@@ -77,14 +77,19 @@ func (c *Config) Record(m MatchRec) int {
 	if len(c.History) > 2000 {
 		c.History = c.History[len(c.History)-2000:]
 	}
-	coins := 5
+	// cada victoria alcanza para algo de la tienda; lo caro se junta en unas pocas
+	coins := 10
 	switch {
+	case m.Won && m.Game == "pong4":
+		coins = 100
 	case m.Won && cpuByID(m.Opp) != nil:
-		coins = 20 + int(cpuByID(m.Opp).Skill*30)
+		coins = 40 + int(cpuByID(m.Opp).Skill*40)
 	case m.Won:
-		coins = 50
+		coins = 80
+	case m.Game == "pong4":
+		coins = 25
 	case cpuByID(m.Opp) == nil:
-		coins = 15
+		coins = 20
 	}
 	c.Coins += coins
 	return coins

@@ -225,7 +225,7 @@ func (o *Overlay) drawToast(s *ebiten.Image, x, y float64) bool {
 }
 
 func (o *Overlay) drawStore(s *ebiten.Image) {
-	w, h := 480.0, 312.0
+	w, h := 640.0, 364.0
 	x, y := o.panel(s, w, h)
 	txt(s, "TIENDA", x+16, y+12, 8, colDim, -1)
 	txt(s, fmt.Sprintf("¤ %d", o.cfg.Coins), x+w-16, y+8, 16, colAcc, 1)
@@ -268,9 +268,9 @@ func (o *Overlay) drawStore(s *ebiten.Image) {
 	}
 	txt(s, label, b.x+b.w/2, b.y+11, 8, col, 0)
 
-	// la lista: dos columnas
+	// la lista: tres columnas de 8
 	for i := 0; i < n; i++ {
-		cx, cy := x+160+float64(i/6)*154, y+70+float64(i%6)*28
+		cx, cy := x+160+float64(i/8)*154, y+70+float64(i%8)*28
 		b := o.button(fmt.Sprintf("st:i:%d", i), cx, cy, 150, 26)
 		nc := colDim
 		if i == sel {
@@ -290,9 +290,8 @@ func (o *Overlay) drawStore(s *ebiten.Image) {
 		}
 		txt(s, st, cx+144, cy+9, 8, sc, 1)
 	}
-	if !o.drawToast(s, x+160, y+h-60) {
-		txt(s, "GANA ¤ JUGANDO. LE GANAS A UN", x+160, y+h-64, 8, colLine, -1)
-		txt(s, "CPU DIFICIL = MAS MONEDAS", x+160, y+h-50, 8, colLine, -1)
+	if !o.drawToast(s, x+160, y+h-56) {
+		txt(s, "CADA VICTORIA DA ¤ (MAS SI EL RIVAL ES DIFICIL)", x+160, y+h-56, 8, colLine, -1)
 	}
 	o.closeBtn(s, x+w-110, y+h-38)
 }
@@ -302,11 +301,12 @@ func (o *Overlay) drawBoard(s *ebiten.Image) {
 	if len(rows) > 10 {
 		rows = rows[:10]
 	}
-	w := 440.0
+	w := 480.0
 	h := 76 + float64(len(rows))*26 + 50
 	x, y := o.panel(s, w, h)
 	txt(s, "RANKING DE VICTORIAS", x+16, y+12, 8, colDim, -1)
-	txt(s, "PONG", x+w-110, y+40, 8, colDim, 1)
+	txt(s, "PONG", x+w-170, y+40, 8, colDim, 1)
+	txt(s, "X4", x+w-100, y+40, 8, colDim, 1)
 	txt(s, "TOTAL", x+w-20, y+40, 8, colDim, 1)
 	for i, r := range rows {
 		ry := y + 58 + float64(i)*26
@@ -325,56 +325,12 @@ func (o *Overlay) drawBoard(s *ebiten.Image) {
 		} else if r.Me {
 			txt(s, "TU", x+68+textW(r.Name, 16)+8, ry+6, 8, colAcc, -1)
 		}
-		txt(s, fmt.Sprintf("%d", r.Wins["pong"]), x+w-110, ry, 16, colDim, 1)
+		txt(s, fmt.Sprintf("%d", r.Wins["pong"]), x+w-170, ry, 16, colDim, 1)
+		txt(s, fmt.Sprintf("%d", r.Wins["pong4"]), x+w-100, ry, 16, colDim, 1)
 		txt(s, fmt.Sprintf("%d", r.Total), x+w-20, ry, 16, colInk, 1)
 	}
 	txt(s, "LOS CPU TAMBIEN JUEGAN", x+16, y+h-38, 8, colLine, -1)
 	txt(s, "CUANDO NO ESTAS", x+16, y+h-24, 8, colLine, -1)
-	o.closeBtn(s, x+w-110, y+h-38)
-}
-
-func (o *Overlay) drawDiary(s *ebiten.Image) {
-	if o.diary == nil {
-		o.diary = buildDiary(&o.cfg, time.Now())
-	}
-	d := o.diary
-	w, h := 500.0, 344.0
-	x, y := o.panel(s, w, h)
-	txt(s, "EL DIARIO IDLE", x+16, y+12, 16, colInk, -1)
-	txt(s, fmt.Sprintf("N.%d · %s", d.No, d.Date), x+w-16, y+10, 8, colDim, 1)
-	if o.tipToday {
-		txt(s, "+10 ¤ POR LEER", x+w-16, y+24, 8, colAcc, 1)
-	}
-	rect(s, x+16, y+38, w-32, 2, colLine)
-	o.diaryPage = clampInt(o.diaryPage, 0, len(d.Pages)-1)
-	ly := y + 50
-	if len(d.Pages) > 0 {
-		for _, l := range d.Pages[o.diaryPage] {
-			if l.s != "" {
-				txt(s, l.s, x+18, ly, l.size, l.c, -1)
-			}
-			if l.size > 8 {
-				ly += 28
-			} else {
-				ly += 14
-			}
-		}
-	}
-	if len(d.Pages) > 1 {
-		b := o.button("dy:prev", x+12, y+h-40, 34, 28)
-		c := colAcc
-		if o.diaryPage == 0 {
-			c = colLine
-		}
-		txt(s, "◀", b.x+b.w/2, b.y+6, 16, c, 0)
-		txt(s, fmt.Sprintf("%d/%d", o.diaryPage+1, len(d.Pages)), x+80, y+h-30, 8, colDim, 0)
-		b = o.button("dy:next", x+112, y+h-40, 34, 28)
-		c = colAcc
-		if o.diaryPage == len(d.Pages)-1 {
-			c = colLine
-		}
-		txt(s, "▶", b.x+b.w/2, b.y+6, 16, c, 0)
-	}
 	o.closeBtn(s, x+w-110, y+h-38)
 }
 
@@ -422,5 +378,62 @@ func (o *Overlay) drawCPUPick(s *ebiten.Image) {
 		if r, ok := rec[c.ID]; ok {
 			txt(s, fmt.Sprintf("%d-%d", r[0], r[1]), x+w-16, ry+28, 8, colInk, 1)
 		}
+	}
+}
+
+// ---------- Pong de 4 ----------
+
+func (o *Overlay) inGame() bool { return o.scene == SceneMatch || o.scene == SceneMatch4 }
+
+func (o *Overlay) updateMatch4(game bool) {
+	m := o.m4
+	if o.demo4 && m.Host() && !m.Started {
+		for m.Players() < 4 {
+			m.AddCPU()
+		}
+		m.Start()
+	}
+	if o.scene == SceneLobby4 && m.Started && m.MySide >= 0 {
+		o.scene = SceneMatch4
+		o.recorded, o.coinMsg = false, ""
+		o.setGame(true) // las flechas pasan a ser del juego
+	}
+	dir := 0.0
+	if game && m.MySide >= 0 {
+		neg, pos := KLeft, KRight
+		if m.MySide == SLeft || m.MySide == SRight {
+			neg, pos = KUp, KDown
+		}
+		if gin.Down(neg) {
+			dir--
+		}
+		if gin.Down(pos) {
+			dir++
+		}
+		if botMode && m.p.Ph == PhPlay { // pruebas: sigue la bola sola
+			dir = clamp((m.p.along(m.MySide)-(m.p.Pad[m.MySide]+PL4/2))/8, -1, 1)
+		}
+	}
+	m.Update(dir, !game)
+	if m.p.Ph != PhOver && o.recorded {
+		o.recorded, o.coinMsg = false, ""
+	}
+	if over, won, w := m.Result(); over {
+		o.recorded = true
+		rec := MatchRec{Game: "pong4", Won: won, Me: m.p.Lives[max(m.MySide, 0)], Opp: "grupo", OppName: "X4"}
+		if !won {
+			rec.OppName = w.Av.DisplayName()
+			switch {
+			case w.Kind == SlotCPU:
+				rec.Opp, rec.OppName = cpus[w.CPU].ID, cpus[w.CPU].Name
+			case w.ID != "":
+				rec.Opp = w.ID
+			default:
+				rec.Opp = "amigo"
+			}
+		}
+		o.coinMsg = fmt.Sprintf("+%d ¤", o.cfg.Record(rec))
+		saveCfg(o.cfg)
+		logf("x4: %s (%s)", map[bool]string{true: "gane", false: "perdi"}[won], o.coinMsg)
 	}
 }
