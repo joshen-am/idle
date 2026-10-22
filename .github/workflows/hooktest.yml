@@ -1,0 +1,28 @@
+name: hooktest
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  hook:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Teclado del sistema
+        env: { MJ_HOOKTEST: "1", MJ_NOSOUND: "1", MJ_LOG_STDOUT: "1" }
+        shell: bash
+        run: go test -run 'Hook|Gesto' -v -count=1 -timeout 3m . 2>&1 | tee out.txt; exit ${PIPESTATUS[0]}
+      - name: Guardar registro
+        if: always()
+        shell: bash
+        run: |
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git checkout -q --orphan logs/hook-${{ matrix.os }} && git rm -rqf --cached . >/dev/null
+          git add -f out.txt && git commit -qm registro && git push -qf origin HEAD:refs/heads/logs/hook-${{ matrix.os }}
