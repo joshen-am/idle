@@ -32,7 +32,7 @@ func TestX4Local(t *testing.T) {
 	} else {
 		t.Setenv("MJ_NOLAN", "1")
 	}
-	runX4(t, 40*time.Second)
+	runX4(t, 40*time.Second*time.Duration(1+len(os.Getenv("MJ_X4LONG"))))
 }
 
 func runX4(t *testing.T, dur time.Duration) {
