@@ -244,7 +244,7 @@ func (p *Pong4) bounceWall(s int) {
 func (p *Pong4) Hit(s int, rel float64) {
 	p.snapTo(s)
 	p.Sp = math.Min(p.Sp*1.09, MaxSp4)
-	a := rel * .95
+	a := rel*.95 + (rand.Float64()-.5)*.12 // un poquito de efecto: nunca queda yendo y viniendo recta
 	nx, ny := sideNormal(s)
 	tx, ty := math.Abs(ny), math.Abs(nx) // a lo largo del lado (derecha o abajo)
 	p.VX = (-nx*math.Cos(a) + tx*math.Sin(a)) * p.Sp
