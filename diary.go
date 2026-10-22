@@ -45,7 +45,6 @@ type Diary struct {
 	Pages []DPage
 }
 
-
 var (
 	diasES  = []string{"DOMINGO", "LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES", "SABADO"}
 	mesesES = []string{"ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"}

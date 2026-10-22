@@ -75,9 +75,9 @@ type Net struct {
 	full     bool   // la sala ya tiene compañero (Pong de 4: probar la siguiente)
 
 	// Pong de 4: el último paquete de cada tipo y los avisos de golpe en cola
-	raw    map[byte][]byte
-	rawN   map[byte]int
-	rawQ   [][]byte
+	raw  map[byte][]byte
+	rawN map[byte]int
+	rawQ [][]byte
 
 	// lado anfitrión
 	hit          HitPkt

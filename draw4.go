@@ -81,7 +81,7 @@ func (o *Overlay) drawMatch4(s *ebiten.Image) {
 	m := o.m4
 	p := m.p
 	sw, sh := float64(o.sw), float64(o.sh)
-	k := math.Floor(math.Min(sw, sh) * .8 / F4 * 4) / 4
+	k := math.Floor(math.Min(sw, sh)*.8/F4*4) / 4
 	ox, oy := math.Round((sw-F4*k)/2), math.Round((sh-F4*k)/2)
 	X := func(v float64) float64 { return math.Round(ox + v*k) }
 	Y := func(v float64) float64 { return math.Round(oy + v*k) }
