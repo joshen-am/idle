@@ -34,7 +34,7 @@ func TestRelayLargo(t *testing.T) {
 			host.SendState(p, 0)
 		}
 		guest.SendInput(float64(tick%200), 0, 0)
-		if tick%20 == 0 {
+		if tick%180 == 0 {
 			host.SendAvatar(av)
 			guest.SendAvatar(av)
 		}

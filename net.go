@@ -23,7 +23,7 @@ const (
 	GamePort = 47800
 	DiscPort = 47801 // anuncios de sala por broadcast
 	magic    = 'M'
-	proto    = 4
+	proto    = 5
 	beaconID = "IDLE1|"
 )
 
@@ -40,10 +40,14 @@ type StatePkt struct {
 	Winner                 uint8
 	Seq                    uint16
 	Ev                     [EvCount]uint8
-	Flags                  uint8 // 1 = pausado porque alguien se escondió
+	Flags                  uint8  // 1 = pausado porque alguien se escondió
+	Echo, Hold             uint16 // para medir la demora: reloj del invitado devuelto y cuánto lo retuve
 }
 
-const statLen = 7*4 + 4 + 2 + EvCount + 1
+const statLen = 7*4 + 4 + 2 + EvCount + 1 + 4
+
+// RelayGap: por el servidor público se puede mandar ~10 mensajes por segundo (si no, corta).
+const RelayGap = 140 * time.Millisecond
 
 // Estado del camino por internet, para mostrarlo en pantalla.
 const (
@@ -88,6 +92,8 @@ type Net struct {
 	hasHit       bool
 	guestPanic   bool
 	guestB       float64
+	guestMs      uint16
+	guestMsAt    time.Time
 	guestRematch uint8
 	hasGuestB    bool
 
@@ -287,6 +293,9 @@ func (n *Net) handle(buf []byte) {
 			n.guestRematch = b[4]
 			n.hasGuestB = true
 			n.guestPanic = len(b) >= 6 && b[5]&1 != 0
+			if len(b) >= 8 {
+				n.guestMs, n.guestMsAt = binary.LittleEndian.Uint16(b[6:]), time.Now()
+			}
 		}
 	case 'S':
 		if !n.host && len(b) >= statLen {
@@ -295,6 +304,8 @@ func (n *Net) handle(buf []byte) {
 				S1: b[28], S2: b[29], Ph: Phase(b[30]), Winner: b[31], Seq: binary.LittleEndian.Uint16(b[32:])}
 			copy(st.Ev[:], b[34:34+EvCount])
 			st.Flags = b[34+EvCount]
+			st.Echo = binary.LittleEndian.Uint16(b[35+EvCount:])
+			st.Hold = binary.LittleEndian.Uint16(b[37+EvCount:])
 			if !n.hasSt || int16(st.Seq-n.st.Seq) > 0 { // los paquetes viejos que llegan tarde no sirven
 				n.st, n.hasSt = st, true
 			}
@@ -308,7 +319,7 @@ func (n *Net) send(kind byte, body []byte) {
 	n.mu.Lock()
 	via, c, p, dc, out := n.via, n.conn, n.lanPeer, n.dc, n.relayOut
 	if via == "relay" && (kind == 'S' || kind == 'I') {
-		if time.Since(n.lastTx) < 45*time.Millisecond { // por el servidor: ~20 por segundo basta
+		if time.Since(n.lastTx) < RelayGap {
 			n.mu.Unlock()
 			return
 		}
@@ -342,17 +353,30 @@ func (n *Net) SendState(p *Pong, flags uint8) {
 	n.mu.Unlock()
 	copy(b[34:], p.Ev[:])
 	b[34+EvCount] = flags
+	n.mu.Lock()
+	binary.LittleEndian.PutUint16(b[35+EvCount:], n.guestMs)
+	binary.LittleEndian.PutUint16(b[37+EvCount:], uint16(time.Since(n.guestMsAt).Milliseconds()))
+	n.mu.Unlock()
 	n.send('S', b)
 }
 
 func (n *Net) SendInput(b float64, rematch, flags uint8) {
-	buf := make([]byte, 6)
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint16(buf[6:], NowMs())
 	binary.LittleEndian.PutUint32(buf, math.Float32bits(float32(b)))
 	buf[4], buf[5] = rematch, flags
 	n.send('I', buf)
 }
 
 func (n *Net) SendAvatar(av Avatar) { n.send('A', av.Encode()) }
+
+var clockStart = time.Now()
+
+// NowMs: reloj propio en milisegundos (da la vuelta cada ~65 s; sirve para medir demoras cortas).
+func NowMs() uint16 { return uint16(time.Since(clockStart).Milliseconds()) }
+
+// Relayed: true si la conexión va por el servidor (pocas actualizaciones por segundo).
+func (n *Net) Relayed() bool { return n.Via() == "relay" }
 
 // HitPkt: el invitado avisa que golpeó la bola (Idx = golpes previos, Sum = puntos jugados).
 type HitPkt struct {

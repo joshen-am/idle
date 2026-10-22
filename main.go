@@ -121,6 +121,9 @@ type App struct {
 	hitMsg                       HitPkt // el golpe que estoy avisando
 	hitAt                        int
 	skipHit2                     uint8
+	lat                          float64 // demora estimada de ida (invitado)
+	corrX, corrY                 float64 // corrección pendiente de la bola (invitado)
+	targetB                      float64 // paleta del invitado, suavizada (anfitrión)
 	shake, flash, pulse1, pulse2 float64
 	trail                        [][2]float64
 
@@ -686,6 +689,9 @@ func (a *App) myInput(side int) Input {
 	if a.ptrActive && (a.mode != ModeLocal || a.ptrSide == side) {
 		in.Target, in.HasTarget = a.ptrY, true
 	}
+	if botMode && a.pong != nil { // pruebas: sigue la bola sola
+		in.Target, in.HasTarget = a.pong.Y+BS/2, true
+	}
 	return in
 }
 
@@ -752,7 +758,8 @@ func (a *App) updateGame() {
 		p.Step(a.myInput(1), &in2, Dt)
 	case ModeHost:
 		if b, rm, ok := a.nw.GuestPaddle(); ok {
-			p.B = clamp(b, 0, H-PH)
+			a.targetB = clamp(b, 0, H-PH)
+			p.B += (a.targetB - p.B) * .35 // llega a saltos por el servidor: se suaviza
 			if rm != a.lastRematch {
 				a.lastRematch = rm
 				if p.Ph == PhOver {
@@ -772,7 +779,12 @@ func (a *App) updateGame() {
 			p.Grace = .9 // por el servidor los avisos tardan más
 		}
 		if h, ok := a.nw.TakeHit(); ok && h.Idx == p.Ev[EvHit2] && int(h.Sum) == p.S1+p.S2 {
-			p.RemoteHit(h.Y, h.B)
+			if p.RemoteHit(h.Y, h.B) && botMode {
+				logf("prueba: golpe remoto aplicado (%.2fs después)", p.since)
+			}
+		}
+		if botMode && a.tick%600 == 0 {
+			logf("prueba: marcador %d-%d golpes %d/%d", p.S1, p.S2, p.Ev[EvHit1], p.Ev[EvHit2])
 		}
 		p.Step(a.myInput(1), nil, Dt)
 		a.nw.SendState(p, panicFlag)
@@ -783,8 +795,21 @@ func (a *App) updateGame() {
 			}
 			if st.Seq != a.lastSeq || !a.evReady { // paquete nuevo del anfitrión
 				a.lastSeq = st.Seq
+				if r := float64(NowMs()-st.Echo-st.Hold) / 1000; r < 2 { // demora de ida y vuelta
+					if a.lat == 0 {
+						a.lat = r / 2
+					}
+					a.lat = a.lat*.8 + r/2*.2
+				}
 				if !a.hitPending { // mientras espero confirmación, sigo mostrando mi rebote
-					p.X, p.Y, p.VX, p.VY = float64(st.X), float64(st.Y), float64(st.VX), float64(st.VY)
+					// el paquete muestra el pasado: adelanto la bola lo que tardó en llegar
+					tx, ty, vx, vy := advanceBall(float64(st.X), float64(st.Y), float64(st.VX), float64(st.VY), a.lat)
+					if p.Ph != PhPlay || st.Ph != PhPlay || math.Abs(tx-p.X) > 30 || math.Abs(ty-p.Y) > 30 || (vx > 0) != (p.VX > 0) {
+						p.X, p.Y, a.corrX, a.corrY = tx, ty, 0, 0
+					} else {
+						a.corrX, a.corrY = tx-p.X, ty-p.Y // se corrige de a poco, sin saltos
+					}
+					p.VX, p.VY = vx, vy
 				}
 				p.Tm = float64(st.Tm)
 				p.S1, p.S2, p.Ph, p.Winner, p.Ev = int(st.S1), int(st.S2), st.Ph, int(st.Winner), st.Ev
@@ -793,12 +818,10 @@ func (a *App) updateGame() {
 				if !a.evReady {
 					a.lastEv, a.evReady, p.A = p.Ev, true, a.targetA
 				}
-			} else if p.Ph == PhPlay && !p.Paused { // entre paquetes: la bola sigue su camino
-				p.X = clamp(p.X+p.VX*Dt, PX+PW, W-PX-PW-BS+2)
-				p.Y += p.VY * Dt
-				if p.Y < 0 || p.Y > H-BS {
-					p.Y, p.VY = clamp(p.Y, 0, H-BS), -p.VY
-				}
+			}
+			if p.Ph == PhPlay && !p.Paused { // entre paquetes: la bola sigue su camino
+				p.X, p.Y, p.VX, p.VY = advanceBall(p.X+a.corrX*.25, p.Y+a.corrY*.25, p.VX, p.VY, Dt)
+				a.corrX, a.corrY = a.corrX*.75, a.corrY*.75
 			}
 			// mis golpes los decido yo, con lo que veo en mi pantalla
 			if !a.hitPending && p.Ph == PhPlay && !p.Paused && p.VX > 0 &&
@@ -812,8 +835,8 @@ func (a *App) updateGame() {
 				a.pulse2 = 1
 				a.skipHit2 = a.hitMsg.Idx + 1 // que no suene de nuevo al confirmarse
 			}
-			if a.hitPending && (a.tick-a.hitAt)%3 == 0 {
-				a.nw.SendHit(a.hitMsg)
+			if d := a.tick - a.hitAt; a.hitPending && (d%3 == 0 && !a.nw.Relayed() || d == 0 || d == 10 || d == 25 || d == 45) {
+				a.nw.SendHit(a.hitMsg) // por el servidor, pocas veces (tiene límite de mensajes)
 			}
 			p.A += (a.targetA - p.A) * .5
 		}
@@ -827,7 +850,7 @@ func (a *App) updateGame() {
 			a.nw.SendInput(p.B, a.rematch, panicFlag)
 		}
 	}
-	if (a.mode == ModeHost || a.mode == ModeGuest) && a.tick%20 == 0 {
+	if (a.mode == ModeHost || a.mode == ModeGuest) && (a.tick%20 == 0 && !a.nw.Relayed() || a.tick%180 == 0) {
 		a.nw.SendAvatar(a.cfg.Av)
 	}
 
@@ -863,6 +886,22 @@ func (a *App) updateGame() {
 	a.pulse1 = math.Max(0, a.pulse1-Dt*4)
 	a.pulse2 = math.Max(0, a.pulse2-Dt*4)
 }
+
+// advanceBall mueve la bola t segundos rebotando arriba/abajo (sin paletas), para predecir.
+func advanceBall(x, y, vx, vy, t float64) (float64, float64, float64, float64) {
+	x = clamp(x+vx*t, PX+PW-2, W-PX-PW-BS+2)
+	y += vy * t
+	for i := 0; i < 4 && (y < 0 || y > H-BS); i++ {
+		if y < 0 {
+			y, vy = -y, math.Abs(vy)
+		} else {
+			y, vy = 2*(H-BS)-y, -math.Abs(vy)
+		}
+	}
+	return x, clamp(y, 0, H-BS), vx, vy
+}
+
+var botMode = os.Getenv("MJ_BOT") != ""
 
 func (a *App) hoverAny() bool {
 	for _, b := range a.buttons() {
