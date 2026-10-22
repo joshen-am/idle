@@ -1,0 +1,30 @@
+=== RUN   TestRelayLargo
+12:19:03.265 servidor: llega OPEN de  (15 bytes)
+12:19:03.301 servidor: respuesta OPEN (id idle-v1-9vha)
+12:19:03.747 servidor: llega OPEN de  (15 bytes)
+12:19:03.747 servidor: respuesta OPEN (id idle-v1-g3c3e7ad22d88df2c)
+12:19:03.761 invitado: oferta enviada a idle-v1-9vha
+12:19:03.922 servidor: llega OFFER de idle-v1-g3c3e7ad22d88df2c (770 bytes)
+12:19:03.936 rtc: estado connecting
+12:19:04.120 servidor: llega ANSWER de idle-v1-9vha (699 bytes)
+12:19:04.120 invitado: respuesta recibida
+12:19:04.121 rtc: estado connecting
+12:19:10.761 relevo: activado hacia idle-v1-9vha
+12:19:11.062 conectado por relevo
+12:19:11.064 relevo: activado hacia idle-v1-g3c3e7ad22d88df2c
+    relay_test.go:54:   8.0s  hueco invitado 153.3602ms
+    relay_test.go:54:   8.5s  hueco invitado 154.0055ms
+    relay_test.go:54:   8.9s  hueco invitado 154.0765ms
+    relay_test.go:54:  11.4s  hueco invitado 155.497ms
+12:19:33.981 rtc: estado failed
+12:19:34.172 rtc: estado failed
+    relay_test.go:54:  56.7s  hueco invitado 170.5793ms
+    relay_test.go:54:  95.5s  hueco invitado 187.0486ms
+    relay_test.go:64: duró 180s; hueco máx anfitrión 158.5389ms, invitado 187.0486ms
+12:22:03.411 servidor: lectura cortada: failed to get reader: context canceled
+12:22:03.411 servidor: lectura cortada: failed to get reader: context canceled
+--- PASS: TestRelayLargo (180.62s)
+12:22:03.411 rtc: estado closed
+12:22:03.411 rtc: estado closed
+PASS
+ok  	idle	180.677s
