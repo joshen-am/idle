@@ -59,6 +59,8 @@ type Pong struct {
 	Paused       bool
 	Ev           [EvCount]uint8 // contadores de eventos (solo suben)
 	cpuErr       float64
+	AISpeed      float64 // CPU: qué tan rápido mueve la paleta (0..1); 0 = normal
+	AIErr        float64 // CPU: cuánto le erra a la bola (1 = normal)
 
 	// En red, los golpes de la paleta derecha los decide el otro PC (RemoteHit).
 	// Si la bola la pasa, se espera Grace segundos a que llegue su golpe antes de dar el punto.
@@ -91,7 +93,8 @@ func (p *Pong) Reset() {
 	if rand.Intn(2) == 0 {
 		serve = -1
 	}
-	*p = Pong{A: H/2 - PH/2, B: H/2 - PH/2, X: W/2 - BS/2, Y: H/2 - BS/2, Ph: PhCount, Tm: 3, Serve: serve, Ev: ev}
+	*p = Pong{A: H/2 - PH/2, B: H/2 - PH/2, X: W/2 - BS/2, Y: H/2 - BS/2, Ph: PhCount, Tm: 3, Serve: serve, Ev: ev,
+		AISpeed: p.AISpeed, AIErr: p.AIErr} // la personalidad de la CPU se mantiene en la revancha
 }
 
 func (p *Pong) emit(e int) { p.Ev[e]++ }
@@ -115,7 +118,11 @@ func (p *Pong) CPUInput() Input {
 	if p.Ph == PhPlay && p.VX > 0 {
 		t = p.Y + BS/2 + p.cpuErr
 	}
-	return Input{Dir: clamp((t-c)/12, -.8, .8)}
+	sp := p.AISpeed
+	if sp == 0 {
+		sp = .8
+	}
+	return Input{Dir: clamp((t-c)/12, -sp, sp)}
 }
 
 // Step avanza un tick. Si in2 es nil la paleta derecha no se mueve aquí (la manda el compañero).
@@ -224,7 +231,11 @@ func (p *Pong) hit(side int) {
 	if side == 1 {
 		p.X = PX + PW
 		p.emit(EvHit1)
-		p.cpuErr = (rand.Float64() - .5) * PH * 1.15
+		e := p.AIErr
+		if e == 0 {
+			e = 1.15
+		}
+		p.cpuErr = (rand.Float64() - .5) * PH * e
 	} else {
 		p.X = W - PX - PW - BS
 		p.emit(EvHit2)

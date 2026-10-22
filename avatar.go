@@ -94,6 +94,11 @@ var avColors = []part{
 	{name: "ROSA", col: hex(0xd98aa6)},
 	{name: "LIMON", col: hex(0xc9c25c)},
 	{name: "GRIS", col: hex(0x9a9690)},
+	// de la tienda
+	{name: "DORADO", col: hex(0xe8b84a)},
+	{name: "NOCHE", col: hex(0x5a5f8a)},
+	{name: "CORAL", col: hex(0xff8f70)},
+	{name: "BOSQUE", col: hex(0x4f8a5b)},
 }
 
 var eyeNames = []string{"PUNTOS", "GRANDES", "FELICES", "DORMIDO", "PICARO", "LENTES"}
@@ -129,6 +134,27 @@ var hats = []part{
 		"....####....",
 		"...#....#...",
 		"..#......#..",
+	}},
+	// de la tienda
+	{name: "FIESTA", col: hex(0xd96fb8), rows: []string{
+		"......#.....",
+		".....###....",
+		"....#####...",
+	}},
+	{name: "VIKINGO", col: hex(0xb8b8c0), rows: []string{
+		".#........#.",
+		".##.####.##.",
+		"..########..",
+	}},
+	{name: "AURA", col: hex(0xf2e08a), rows: []string{
+		"...######...",
+		"..#......#..",
+		"...######...",
+	}},
+	{name: "CHEF", col: hex(0xf0f0f0), rows: []string{
+		"..##.##.##..",
+		"..########..",
+		"...######...",
 	}},
 }
 

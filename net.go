@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
@@ -69,7 +70,8 @@ type Net struct {
 	out  chan []byte // cola de envío, para no frenar el juego
 	lan  lanLink     // conexión directa en la misma red (lan.go)
 
-	peerAv []byte // personaje del otro
+	peerAv   []byte // personaje del otro
+	peerProf []byte // sus victorias (para el ranking)
 
 	// lado anfitrión
 	hit          HitPkt
@@ -241,6 +243,8 @@ func (n *Net) handle(buf []byte) {
 		n.lanInfo(b)
 	case 'A':
 		n.peerAv = append([]byte(nil), b...)
+	case 'P':
+		n.peerProf = append([]byte(nil), b...)
 	case 'H':
 		if n.host && len(b) >= 10 {
 			n.hit = HitPkt{Idx: b[0], Sum: b[1], Y: float64(f(2)), B: float64(f(6))}
@@ -326,6 +330,8 @@ func (n *Net) SendInput(b float64, rematch, flags uint8) {
 
 func (n *Net) SendAvatar(av Avatar) { n.send('A', av.Encode()) }
 
+func (n *Net) SendProfile(p Profile) { n.send('P', encodeProfile(p)) }
+
 func (n *Net) SendHit(h HitPkt) {
 	b := make([]byte, 10)
 	b[0], b[1] = h.Idx, h.Sum
@@ -389,6 +395,17 @@ func (n *Net) PeerAvatar() (Avatar, bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return DecodeAvatar(n.peerAv)
+}
+
+// PeerProfile: id, nombre y victorias del otro (si ya llegaron).
+func (n *Net) PeerProfile() (Profile, bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	var p Profile
+	if len(n.peerProf) == 0 || json.Unmarshal(n.peerProf, &p) != nil || p.ID == "" {
+		return p, false
+	}
+	return p, true
 }
 
 func (n *Net) GuestPanic() bool {

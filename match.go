@@ -20,6 +20,8 @@ const (
 type Match struct {
 	mode Mode
 	p    *Pong
+	cpu  *CPUChar // rival (contra la CPU)
+	prof Profile  // lo que le cuento al otro (online)
 	nw   *Net
 	my   Avatar
 	snd  *Sound
@@ -50,6 +52,14 @@ func NewMatch(mode Mode, nw *Net, my Avatar, snd *Sound) *Match {
 	return &Match{mode: mode, p: NewPong(), nw: nw, my: my, snd: snd, evReady: mode != ModeGuest}
 }
 
+// NewCPUMatch: partida contra uno de los personajes CPU, con su forma de jugar.
+func NewCPUMatch(cpu *CPUChar, my Avatar, snd *Sound) *Match {
+	m := NewMatch(ModeCPU, nil, my, snd)
+	m.cpu = cpu
+	m.p.AISpeed, m.p.AIErr = cpu.Speed, cpu.Err
+	return m
+}
+
 func (m *Match) Online() bool { return m.mode != ModeCPU }
 
 // Avatars: personaje de la izquierda y de la derecha.
@@ -62,6 +72,9 @@ func (m *Match) Avatars() (Avatar, Avatar) {
 	}
 	switch m.mode {
 	case ModeCPU:
+		if m.cpu != nil {
+			return m.my, m.cpu.Av
+		}
 		return m.my, avCPU
 	case ModeHost:
 		return m.my, peer
@@ -136,6 +149,9 @@ func (m *Match) Update(in Input, act, hidden bool) bool {
 	}
 	if m.Online() && m.tick%180 == 30 {
 		m.nw.SendAvatar(m.my)
+	}
+	if m.Online() && m.tick%180 == 120 && m.prof.ID != "" {
+		m.nw.SendProfile(m.prof)
 	}
 
 	// sonidos y efectos de lo que pasó

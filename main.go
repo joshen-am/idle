@@ -20,6 +20,14 @@ type Config struct {
 	HasPet bool
 	PetX   float64 // lugar de la mascota (fracción de la pantalla)
 	PetY   float64
+
+	ID        string             // identifica a este jugador (para el ranking)
+	Coins     int                // monedas para la tienda
+	Owned     []string           // lo comprado en la tienda ("hat:3")
+	Bought    []Purchase         // compras (salen en el diario)
+	History   []MatchRec         // partidas jugadas
+	Friends   map[string]*Friend // otros jugadores vistos online
+	LastDiary string             // último día que se abrió el diario
 }
 
 func cfgPath() string {
@@ -45,6 +53,10 @@ func loadCfg() Config {
 	if c.Room = cleanName(c.Room); c.Room == "" {
 		c.Room = "IDLE"
 	}
+	if c.ID == "" {
+		c.ID = newID()
+	}
+	c.grandfather()
 	return c
 }
 

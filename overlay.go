@@ -29,9 +29,13 @@ const (
 	SceneProfile
 	SceneSearch
 	SceneMatch
+	SceneStore
+	SceneBoard
+	SceneDiary
+	SceneCPUPick
 )
 
-var menuItems = []string{"online", "cpu", "perfil", "anim", "sonido", "salir"}
+var menuItems = []string{"online", "cpu", "tienda", "ranking", "diario", "perfil", "anim", "sonido", "salir"}
 
 var profLabels = []string{"CUERPO", "COLOR", "OJOS", "GORRO", "NOMBRE", "SALA"}
 
@@ -84,6 +88,19 @@ type Overlay struct {
 	draws     int
 	dbg2      time.Time
 	dbgTick   int
+
+	storeTab  int
+	storeSel  int
+	diary     *Diary
+	diaryPage int
+	tipToday  bool
+	world     *World
+	worldDay  string
+	recorded  bool   // ya anoté el resultado de esta partida
+	coinMsg   string // "+25 ¤" al terminar
+	overLine  string // lo que dice el CPU al terminar
+	toast     string
+	toastAt   time.Time
 }
 
 var debugDraw = os.Getenv("MJ_DEBUGDRAW") != ""
@@ -167,9 +184,10 @@ func (o *Overlay) setGame(on bool) {
 	o.prevGame = on
 }
 
-func (o *Overlay) startCPU() {
+func (o *Overlay) startCPU(cpu *CPUChar) {
 	o.closeMatch()
-	o.match = NewMatch(ModeCPU, nil, o.cfg.Av, o.snd)
+	o.match = NewCPUMatch(cpu, o.cfg.Av, o.snd)
+	o.recorded = false
 	o.scene = SceneMatch
 	o.setGame(true) // las flechas pasan a ser del juego
 }
@@ -193,14 +211,24 @@ func (o *Overlay) closeMatch() {
 		o.setGame(false)
 	}
 	o.scene, o.act = SceneNone, false
+	o.recorded = false
 }
 
 func (o *Overlay) openMenu() {
 	o.scene, o.sel = SceneMenu, 0
 }
 
+// isPanel: escenas que son un recuadro al lado de la mascota (un clic afuera las cierra).
+func (o *Overlay) isPanel() bool {
+	switch o.scene {
+	case SceneMenu, SceneProfile, SceneStore, SceneBoard, SceneDiary, SceneCPUPick:
+		return true
+	}
+	return false
+}
+
 func (o *Overlay) closePanel() {
-	if o.scene == SceneProfile {
+	if o.scene == SceneProfile || o.scene == SceneStore {
 		if o.cfg.Room == "" {
 			o.cfg.Room = "IDLE"
 		}
@@ -222,17 +250,7 @@ func (o *Overlay) openProfile() {
 }
 
 func (o *Overlay) profChange(r, d int) {
-	av := &o.cfg.Av
-	switch r {
-	case 0:
-		av.Body = wrap(av.Body, d, len(bodies))
-	case 1:
-		av.Color = wrap(av.Color, d, len(avColors))
-	case 2:
-		av.Eyes = wrap(av.Eyes, d, len(eyeNames))
-	case 3:
-		av.Hat = wrap(av.Hat, d, len(hats))
-	}
+	o.cfg.nextOwned([]string{"body", "color", "eyes", "hat"}[r], d) // solo lo que ya es tuyo
 	saveCfg(o.cfg)
 }
 
@@ -241,7 +259,13 @@ func (o *Overlay) menuAction(id string) {
 	case "online":
 		o.startOnline()
 	case "cpu":
-		o.startCPU()
+		o.scene, o.sel = SceneCPUPick, 0
+	case "tienda":
+		o.scene, o.storeSel = SceneStore, int(*slot(&o.cfg.Av, storeCats[o.storeTab].key))
+	case "ranking":
+		o.scene = SceneBoard
+	case "diario":
+		o.openDiary()
 	case "perfil":
 		o.openProfile()
 	case "anim":
@@ -305,6 +329,8 @@ func (o *Overlay) handleKey(k Key) {
 		if k == KEsc {
 			o.closeMatch()
 		}
+	case SceneStore, SceneBoard, SceneDiary, SceneCPUPick:
+		o.sceneKey(k)
 	case SceneMatch:
 		switch k {
 		case KEnter, KSpace:
@@ -351,8 +377,8 @@ func (o *Overlay) Update() error {
 		switch {
 		case game && o.scene == SceneNone:
 			o.openMenu() // entrar al modo juego sin partida: aparece el menú
-		case !game && (o.scene == SceneMenu || o.scene == SceneProfile):
-			o.scene, o.autoGame = SceneNone, false
+		case !game && o.isPanel() && o.scene != SceneDiary:
+			o.closePanel()
 		}
 	}
 	for _, k := range keys {
@@ -378,7 +404,7 @@ func (o *Overlay) Update() error {
 		}
 		o.pressedIn = false
 		o.afterClick()
-	} else if pressed && !inPanel && !o.pet.Hit(o.mx, o.my) && (o.scene == SceneMenu || o.scene == SceneProfile) {
+	} else if pressed && !inPanel && !o.pet.Hit(o.mx, o.my) && o.isPanel() {
 		o.closePanel() // clic afuera: se cierra el menú
 	}
 
@@ -387,7 +413,7 @@ func (o *Overlay) Update() error {
 		tx, ty := o.trashPos()
 		click, rel, trashed := o.pet.Update(o.mx, o.my, o.down && !o.pressedIn, !o.cfg.NoAnim, float64(o.sw), float64(o.sh), tx, ty)
 		if click {
-			if o.scene == SceneMenu || o.scene == SceneProfile {
+			if o.isPanel() {
 				o.closePanel()
 			} else if o.scene == SceneNone {
 				o.openMenu()
@@ -415,6 +441,8 @@ func (o *Overlay) Update() error {
 			mode = ModeHost
 		}
 		o.match, o.nw = NewMatch(mode, o.nw, o.cfg.Av, o.snd), nil
+		o.match.prof = o.cfg.MyProfile()
+		o.recorded = false
 		o.scene = SceneMatch
 		o.setGame(true)
 	}
@@ -436,7 +464,11 @@ func (o *Overlay) Update() error {
 			o.closeMatch()
 		}
 		o.act = false
+		if o.match != nil {
+			o.afterMatchFrame()
+		}
 	}
+	o.checkDiary()
 
 	o.updateWindow()
 	o.placeWindow()
@@ -463,10 +495,15 @@ func (o *Overlay) clickButton(id string) {
 	switch {
 	case o.scene == SceneMenu:
 		o.menuAction(id)
-	case id == "listo":
+	case id == "listo" || id == "cerrar":
 		o.closePanel()
 	case id == "cancelar":
 		o.closeMatch()
+	case id == "vscpu":
+		o.closeMatch()
+		o.scene, o.sel = SceneCPUPick, 0
+	case len(id) > 3 && (id[:3] == "st:" || id[:3] == "dy:" || id[:3] == "cp:"):
+		o.sceneClick(id)
 	case len(id) == 6 && id[:3] == "pf:": // pf:R+ / pf:R-
 		r := int(id[3] - '0')
 		o.sel = r
@@ -701,12 +738,21 @@ func (o *Overlay) Draw(s *ebiten.Image) {
 		o.drawProfile(s)
 	case SceneSearch:
 		o.drawSearch(s)
+	case SceneStore:
+		o.drawStore(s)
+	case SceneBoard:
+		o.drawBoard(s)
+	case SceneDiary:
+		o.drawDiary(s)
+	case SceneCPUPick:
+		o.drawCPUPick(s)
 	}
 	shot(s, o.tick)
 }
 
 func (o *Overlay) drawMenu(s *ebiten.Image) {
-	labels := map[string]string{"online": "PONG ONLINE", "cpu": "PONG VS CPU", "perfil": "PERSONAJE",
+	labels := map[string]string{"online": "PONG ONLINE", "cpu": "PONG VS CPU", "tienda": "TIENDA", "ranking": "RANKING",
+		"diario": "DIARIO", "perfil": "PERSONAJE",
 		"anim": "ANIMACIONES: SI", "sonido": "SONIDO: NO", "salir": "CERRAR IDLE"}
 	if o.cfg.NoAnim {
 		labels["anim"] = "ANIMACIONES: NO"
@@ -717,6 +763,7 @@ func (o *Overlay) drawMenu(s *ebiten.Image) {
 	w, h := 300.0, 30+float64(len(menuItems))*28+34
 	x, y := o.panel(s, w, h)
 	txt(s, o.cfg.Av.DisplayName(), x+16, y+12, 8, o.cfg.Av.Col(), -1)
+	txt(s, fmt.Sprintf("★%d  ¤%d", total(o.cfg.Wins()), o.cfg.Coins), x+w-16, y+12, 8, colAcc, 1)
 	for i, id := range menuItems {
 		b := o.button(id, x+6, y+30+float64(i)*28, w-12, 26)
 		c := colDim
@@ -808,6 +855,10 @@ func (o *Overlay) drawSearch(s *ebiten.Image) {
 	rect(s, b.x, b.y, b.w, b.h, colCard)
 	frame(s, b.x, b.y, b.w, b.h, colLine)
 	txt(s, "CANCELAR", b.x+b.w/2, b.y+7, 16, colInk, 0)
+	b = o.button("vscpu", x+10, y+h-40, 120, 28) // si no llega nadie, juega un CPU
+	rect(s, b.x, b.y, b.w, b.h, colCard)
+	frame(s, b.x, b.y, b.w, b.h, colLine)
+	txt(s, "VS CPU", b.x+b.w/2, b.y+7, 16, colInk, 0)
 }
 
 func (o *Overlay) drawMatch(s *ebiten.Image) {
@@ -858,6 +909,12 @@ func (o *Overlay) drawMatch(s *ebiten.Image) {
 		}
 		ptxt(s, "GANA "+w.DisplayName(), sw/2, sh/2-24, 16, w.Col(), 0)
 		ptxt(s, "ENTER REVANCHA · ESC MENU", sw/2, sh/2+12, 8, colInk, 0)
+		if o.coinMsg != "" {
+			ptxt(s, o.coinMsg, sw/2, sh/2-60, 16, colAcc, 0)
+		}
+		if o.overLine != "" {
+			ptxt(s, o.overLine, sw/2, sh/2+40, 8, colInk, 0)
+		}
 	case p.Ph == PhDC:
 		ptxt(s, "SE CORTO LA CONEXION", sw/2, sh/2-24, 16, colErr, 0)
 		ptxt(s, "ENTER VOLVER", sw/2, sh/2+12, 8, colInk, 0)
@@ -884,7 +941,11 @@ func runOverlay() error {
 	o.initPet()
 	switch os.Getenv("MJ_DEMO") { // pruebas: arranca directo en una partida
 	case "cpu":
-		o.startCPU()
+		o.startCPU(&cpus[0])
+	case "tienda", "ranking", "diario":
+		o.menuAction(os.Getenv("MJ_DEMO"))
+	case "rival":
+		o.menuAction("cpu")
 	case "online":
 		o.setGame(true)
 		o.startOnline()
