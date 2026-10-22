@@ -665,7 +665,10 @@ func (a *App) updateGame() {
 		if p.Paused {
 			panicFlag = 1
 		}
-		p.RemoteRight, p.Grace = true, .9 // espera el aviso de golpe del otro (viaja por el servidor)
+		p.RemoteRight, p.Grace = true, .9 // espera el aviso de golpe del otro (por el servidor tarda)
+		if a.nw.Direct() {
+			p.Grace = .3
+		}
 		if h, ok := a.nw.TakeHit(); ok && h.Idx == p.Ev[EvHit2] && int(h.Sum) == p.S1+p.S2 {
 			if p.RemoteHit(h.Y, h.B) && botMode {
 				logf("prueba: golpe remoto aplicado (%.2fs después)", p.since)
@@ -736,7 +739,7 @@ func (a *App) updateGame() {
 				a.pulse2 = 1
 				a.skipHit2 = a.hitMsg.Idx + 1 // que no suene de nuevo al confirmarse
 			}
-			if d := a.tick - a.hitAt; a.hitPending && (d == 0 || d == 10 || d == 25 || d == 45) {
+			if d := a.tick - a.hitAt; a.hitPending && (d == 0 || d == 10 || d == 25 || d == 45 || d%3 == 0 && a.nw.Direct()) {
 				a.nw.SendHit(a.hitMsg) // pocas veces: el servidor tiene límite de mensajes
 			}
 			p.A += (a.targetA - p.A) * .5

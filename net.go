@@ -67,6 +67,7 @@ type Net struct {
 	sig  *signal
 	peer string      // id del otro en el servidor
 	out  chan []byte // cola de envío, para no frenar el juego
+	lan  lanLink     // conexión directa en la misma red (lan.go)
 
 	peerAv []byte // personaje del otro
 
@@ -198,6 +199,7 @@ func (n *Net) attach(s *signal, host bool, peer string) bool {
 		return false
 	}
 	n.sig, n.host, n.peer, n.bye, n.hasSt, n.connected = s, host, peer, false, false, false
+	n.lanStart()
 	if n.out != nil {
 		close(n.out)
 	}
@@ -235,6 +237,8 @@ func (n *Net) handle(buf []byte) {
 	switch buf[2] {
 	case 'B':
 		n.bye = true
+	case 'L':
+		n.lanInfo(b)
 	case 'A':
 		n.peerAv = append([]byte(nil), b...)
 	case 'H':
@@ -271,6 +275,10 @@ func (n *Net) handle(buf []byte) {
 func (n *Net) send(kind byte, body []byte) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.lanActive() && kind != 'L' { // directo: sin límite de mensajes
+		n.lan.udp.WriteToUDP(append([]byte{magic, proto, kind}, body...), n.lan.peer)
+		return
+	}
 	if n.out == nil || n.peer == "" {
 		return
 	}
@@ -415,9 +423,12 @@ func (n *Net) Close() {
 	time.Sleep(30 * time.Millisecond) // que alcance a salir el aviso
 	n.mu.Lock()
 	n.closed = true
-	sig, out := n.sig, n.out
+	sig, out, udp := n.sig, n.out, n.lan.udp
 	n.out = nil
 	n.mu.Unlock()
+	if udp != nil {
+		udp.Close()
+	}
 	if out != nil {
 		close(out)
 	}

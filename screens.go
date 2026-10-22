@@ -442,6 +442,13 @@ func (a *App) drawGame(s *ebiten.Image) {
 			txt(s, "W / S", 18, H-18, 8, colDim, -1)
 			txt(s, "FLECHAS", W-18, H-18, 8, colDim, 1)
 		}
+		if a.nw != nil {
+			if a.nw.Direct() {
+				txt(s, "DIRECTO", W/2, 146, 8, colOk, 0)
+			} else {
+				txt(s, "POR SERVIDOR", W/2, 146, 8, colDim, 0)
+			}
+		}
 	case PhOver:
 		w := av1
 		if p.Winner == 2 {
