@@ -117,6 +117,10 @@ type App struct {
 	lastRematch                  uint8
 	lastSeq                      uint16
 	targetA                      float64
+	hitPending                   bool   // invitado: golpeé y espero que el anfitrión lo confirme
+	hitMsg                       HitPkt // el golpe que estoy avisando
+	hitAt                        int
+	skipHit2                     uint8
 	shake, flash, pulse1, pulse2 float64
 	trail                        [][2]float64
 
@@ -763,13 +767,26 @@ func (a *App) updateGame() {
 		if p.Paused {
 			panicFlag = 1
 		}
+		p.RemoteRight, p.Grace = true, .45
+		if a.nw.Via() == "relay" {
+			p.Grace = .9 // por el servidor los avisos tardan más
+		}
+		if h, ok := a.nw.TakeHit(); ok && h.Idx == p.Ev[EvHit2] && int(h.Sum) == p.S1+p.S2 {
+			p.RemoteHit(h.Y, h.B)
+		}
 		p.Step(a.myInput(1), nil, Dt)
 		a.nw.SendState(p, panicFlag)
 	case ModeGuest:
 		if st, ok := a.nw.State(); ok {
+			if a.hitPending && (st.Ev[EvHit2] != a.hitMsg.Idx || int(st.S1+st.S2) != int(a.hitMsg.Sum) || a.tick-a.hitAt > 90) {
+				a.hitPending = false // el anfitrión ya lo aplicó (o ya no sirve)
+			}
 			if st.Seq != a.lastSeq || !a.evReady { // paquete nuevo del anfitrión
 				a.lastSeq = st.Seq
-				p.X, p.Y, p.VX, p.VY, p.Tm = float64(st.X), float64(st.Y), float64(st.VX), float64(st.VY), float64(st.Tm)
+				if !a.hitPending { // mientras espero confirmación, sigo mostrando mi rebote
+					p.X, p.Y, p.VX, p.VY = float64(st.X), float64(st.Y), float64(st.VX), float64(st.VY)
+				}
+				p.Tm = float64(st.Tm)
 				p.S1, p.S2, p.Ph, p.Winner, p.Ev = int(st.S1), int(st.S2), st.Ph, int(st.Winner), st.Ev
 				p.Paused = st.Flags&1 != 0
 				a.targetA = float64(st.A)
@@ -777,11 +794,26 @@ func (a *App) updateGame() {
 					a.lastEv, a.evReady, p.A = p.Ev, true, a.targetA
 				}
 			} else if p.Ph == PhPlay && !p.Paused { // entre paquetes: la bola sigue su camino
-				p.X = clamp(p.X+p.VX*Dt, PX+PW, W-PX-PW-BS)
+				p.X = clamp(p.X+p.VX*Dt, PX+PW, W-PX-PW-BS+2)
 				p.Y += p.VY * Dt
 				if p.Y < 0 || p.Y > H-BS {
 					p.Y, p.VY = clamp(p.Y, 0, H-BS), -p.VY
 				}
+			}
+			// mis golpes los decido yo, con lo que veo en mi pantalla
+			if !a.hitPending && p.Ph == PhPlay && !p.Paused && p.VX > 0 &&
+				p.X+BS >= W-PX-PW && p.X <= W-PX && p.Y+BS >= p.B && p.Y <= p.B+PH {
+				a.hitPending, a.hitAt = true, a.tick
+				a.hitMsg = HitPkt{Idx: p.Ev[EvHit2], Sum: uint8(p.S1 + p.S2), Y: p.Y, B: p.B}
+				saved := p.Ev
+				p.hit(2) // rebote inmediato en mi pantalla
+				p.Ev = saved
+				a.snd.Play(EvHit2)
+				a.pulse2 = 1
+				a.skipHit2 = a.hitMsg.Idx + 1 // que no suene de nuevo al confirmarse
+			}
+			if a.hitPending && (a.tick-a.hitAt)%3 == 0 {
+				a.nw.SendHit(a.hitMsg)
 			}
 			p.A += (a.targetA - p.A) * .5
 		}
@@ -801,6 +833,9 @@ func (a *App) updateGame() {
 
 	// sonidos y efectos de lo que pasó
 	for i := 0; i < EvCount; i++ {
+		if i == EvHit2 && a.mode == ModeGuest && p.Ev[i] == a.skipHit2 && p.Ev[i] != a.lastEv[i] {
+			continue // ya sonó cuando golpeé
+		}
 		if p.Ev[i] != a.lastEv[i] && !a.panic {
 			a.snd.Play(i)
 			switch i {

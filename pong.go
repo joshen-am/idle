@@ -59,6 +59,12 @@ type Pong struct {
 	Paused       bool
 	Ev           [EvCount]uint8 // contadores de eventos (solo suben)
 	cpuErr       float64
+
+	// En red, los golpes de la paleta derecha los decide el otro PC (RemoteHit).
+	// Si la bola la pasa, se espera Grace segundos a que llegue su golpe antes de dar el punto.
+	RemoteRight bool
+	Grace       float64
+	since       float64 // tiempo desde que la bola cruzó la paleta derecha
 }
 
 func NewPong() *Pong {
@@ -121,41 +127,69 @@ func (p *Pong) Step(in1 Input, in2 *Input, dt float64) {
 			p.launch()
 		}
 	case PhPlay:
-		n := int(math.Max(1, math.Ceil(p.Sp*dt/2))) // sub-pasos: la bola no atraviesa paletas
-		for k := 0; k < n; k++ {
-			h := dt / float64(n)
-			p.X += p.VX * h
-			p.Y += p.VY * h
-			if p.Y < 0 {
-				p.Y, p.VY = 0, math.Abs(p.VY)
-				p.emit(EvWall)
+		p.moveBall(dt)
+	}
+}
+
+// moveBall mueve la bola dt segundos (con rebotes, golpes y puntos).
+func (p *Pong) moveBall(dt float64) {
+	n := int(math.Max(1, math.Ceil(p.Sp*dt/2))) // sub-pasos: la bola no atraviesa paletas
+	for k := 0; k < n && p.Ph == PhPlay; k++ {
+		h := dt / float64(n)
+		p.X += p.VX * h
+		p.Y += p.VY * h
+		if p.Y < 0 {
+			p.Y, p.VY = 0, math.Abs(p.VY)
+			p.emit(EvWall)
+		}
+		if p.Y > H-BS {
+			p.Y, p.VY = H-BS, -math.Abs(p.VY)
+			p.emit(EvWall)
+		}
+		if p.VX < 0 && p.X <= PX+PW && p.X+BS >= PX && p.Y+BS >= p.A && p.Y <= p.A+PH {
+			p.hit(1)
+		}
+		if p.RemoteRight {
+			if p.VX > 0 && p.X+BS >= W-PX-PW {
+				p.since += h
 			}
-			if p.Y > H-BS {
-				p.Y, p.VY = H-BS, -math.Abs(p.VY)
-				p.emit(EvWall)
+		} else if p.VX > 0 && p.X+BS >= W-PX-PW && p.X <= W-PX && p.Y+BS >= p.B && p.Y <= p.B+PH {
+			p.hit(2)
+		}
+		if p.X < -BS-6 {
+			p.point(2)
+			return
+		}
+		if p.X > W+6 {
+			if p.RemoteRight && p.since < p.Grace {
+				p.X = W + 6 // espera por si llega el golpe del otro
+				continue
 			}
-			if p.VX < 0 && p.X <= PX+PW && p.X+BS >= PX && p.Y+BS >= p.A && p.Y <= p.A+PH {
-				p.hit(1)
-			}
-			if p.VX > 0 && p.X+BS >= W-PX-PW && p.X <= W-PX && p.Y+BS >= p.B && p.Y <= p.B+PH {
-				p.hit(2)
-			}
-			if p.X < -BS-6 {
-				p.point(2)
-				break
-			}
-			if p.X > W+6 {
-				p.point(1)
-				break
-			}
+			p.point(1)
+			return
 		}
 	}
+}
+
+// RemoteHit aplica un golpe que el otro PC vio en su pantalla: la bola rebota en su paleta
+// y avanza el tiempo que ya pasó desde entonces.
+func (p *Pong) RemoteHit(ballY, padB float64) bool {
+	if p.Ph != PhPlay || p.VX <= 0 {
+		return false
+	}
+	back := p.since
+	saved := p.B
+	p.Y, p.B = ballY, padB
+	p.hit(2)
+	p.B = saved
+	p.moveBall(back)
+	return true
 }
 
 func (p *Pong) launch() {
 	ang := rand.Float64()*.8 - .4
 	p.Ph = PhPlay
-	p.X, p.Y, p.Sp = W/2-BS/2, H/2-BS/2, 125
+	p.X, p.Y, p.Sp, p.since = W/2-BS/2, H/2-BS/2, 125, 0
 	p.VX = p.Serve * p.Sp * math.Cos(ang)
 	p.VY = p.Sp * math.Sin(ang)
 	p.emit(EvServe)
@@ -169,6 +203,7 @@ func (p *Pong) hit(side int) {
 	rel := clamp((p.Y+BS/2-(py+PH/2))/(PH/2+BS/2), -1, 1) // dónde pegó en la paleta
 	ang := rel * 1.0
 	p.Sp = math.Min(p.Sp*1.07, MaxSpeed)
+	p.since = 0
 	p.VX = dir * p.Sp * math.Cos(ang)
 	p.VY = p.Sp * math.Sin(ang)
 	if side == 1 {

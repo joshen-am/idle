@@ -84,6 +84,8 @@ type Net struct {
 	peerAv []byte // personaje del otro
 
 	// lado anfitrión
+	hit          HitPkt
+	hasHit       bool
 	guestPanic   bool
 	guestB       float64
 	guestRematch uint8
@@ -272,6 +274,13 @@ func (n *Net) handle(buf []byte) {
 		n.bye = true
 	case 'A':
 		n.peerAv = append([]byte(nil), b...)
+	case 'H':
+		if n.host && len(b) >= 10 {
+			n.hit = HitPkt{Idx: b[0], Sum: b[1],
+				Y: float64(math.Float32frombits(binary.LittleEndian.Uint32(b[2:]))),
+				B: float64(math.Float32frombits(binary.LittleEndian.Uint32(b[6:])))}
+			n.hasHit = true
+		}
 	case 'I':
 		if n.host && len(b) >= 5 {
 			n.guestB = float64(math.Float32frombits(binary.LittleEndian.Uint32(b)))
@@ -344,6 +353,28 @@ func (n *Net) SendInput(b float64, rematch, flags uint8) {
 }
 
 func (n *Net) SendAvatar(av Avatar) { n.send('A', av.Encode()) }
+
+// HitPkt: el invitado avisa que golpeó la bola (Idx = golpes previos, Sum = puntos jugados).
+type HitPkt struct {
+	Idx, Sum uint8
+	Y, B     float64
+}
+
+func (n *Net) SendHit(h HitPkt) {
+	b := make([]byte, 10)
+	b[0], b[1] = h.Idx, h.Sum
+	binary.LittleEndian.PutUint32(b[2:], math.Float32bits(float32(h.Y)))
+	binary.LittleEndian.PutUint32(b[6:], math.Float32bits(float32(h.B)))
+	n.send('H', b)
+}
+
+func (n *Net) TakeHit() (HitPkt, bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	h, ok := n.hit, n.hasHit
+	n.hasHit = false
+	return h, ok
+}
 
 func (n *Net) PeerAvatar() (Avatar, bool) {
 	n.mu.Lock()

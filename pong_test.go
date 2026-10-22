@@ -18,3 +18,35 @@ func TestPartidaCompleta(t *testing.T) {
 	}
 	t.Logf("resultado %d-%d, golpes %d/%d", p.S1, p.S2, p.Ev[EvHit1], p.Ev[EvHit2])
 }
+
+// En red: si la bola pasa la paleta derecha, se espera el golpe del otro PC antes de dar el punto.
+func TestGolpeRemoto(t *testing.T) {
+	setup := func() *Pong {
+		p := NewPong()
+		p.RemoteRight, p.Grace = true, .5
+		p.Ph, p.X, p.Y, p.VX, p.VY, p.Sp = PhPlay, W-60, 100, 200, 0, 200
+		p.B = 0 // la paleta (según el anfitrión) está lejos de la bola
+		return p
+	}
+	// sin golpe: el punto llega recién después de la espera
+	p := setup()
+	steps := 0
+	for p.Ph == PhPlay && steps < 600 {
+		p.Step(Input{}, nil, Dt)
+		steps++
+	}
+	if p.S1 != 1 || float64(steps)*Dt < .5 {
+		t.Fatalf("punto %d-%d tras %.2fs", p.S1, p.S2, float64(steps)*Dt)
+	}
+	// con golpe que llega tarde: la bola vuelve y no hay punto
+	p = setup()
+	for i := 0; i < 30; i++ {
+		p.Step(Input{}, nil, Dt)
+	}
+	if !p.RemoteHit(100, 90) || p.VX >= 0 || p.S1 != 0 || p.Ev[EvHit2] != 1 {
+		t.Fatalf("el golpe remoto no se aplicó: vx %.0f puntos %d ev %d", p.VX, p.S1, p.Ev[EvHit2])
+	}
+	if p.X > W-PX-PW-BS-1 {
+		t.Fatalf("la bola no avanzó tras el golpe: x=%.1f", p.X)
+	}
+}

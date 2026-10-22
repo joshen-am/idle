@@ -1,0 +1,28 @@
+name: ratetest
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  rate:
+    strategy:
+      fail-fast: false
+      matrix:
+        rate: [4, 8, 15, 30]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Ritmo ${{ matrix.rate }}/s
+        env: { MJ_RATE: "${{ matrix.rate }}", MJ_NOSOUND: "1" }
+        shell: bash
+        run: go test -run TestServidorRitmo -v -count=1 -timeout 4m . 2>&1 | tee out.txt; exit ${PIPESTATUS[0]}
+      - name: Guardar registro
+        if: always()
+        shell: bash
+        run: |
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git checkout -q --orphan logs/rate-${{ matrix.rate }} && git rm -rqf --cached . >/dev/null
+          git add -f out.txt && git commit -qm "registro rate" && git push -qf origin HEAD:refs/heads/logs/rate-${{ matrix.rate }}
