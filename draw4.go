@@ -90,7 +90,8 @@ func (o *Overlay) drawMatch4(s *ebiten.Image) {
 	wallCol := color.NRGBA{120, 116, 108, 200}
 	// esquinas (siempre pared)
 	for _, c := range [][2]float64{{0, 0}, {F4 - Corner4, 0}, {0, F4 - Corner4}, {F4 - Corner4, F4 - Corner4}} {
-		srect(s, X(c[0]), Y(c[1]), Corner4*k, Corner4*k, color.NRGBA{60, 58, 54, 170})
+		rect(s, X(c[0]), Y(c[1]), Corner4*k, Corner4*k, color.NRGBA{60, 58, 54, 80})
+		frame(s, X(c[0]), Y(c[1]), Corner4*k, Corner4*k, color.NRGBA{120, 116, 108, 160})
 	}
 	for side := 0; side < 4; side++ {
 		sl := m.Slots[side]

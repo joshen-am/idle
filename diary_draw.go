@@ -86,9 +86,13 @@ func (o *Overlay) drawDiary(s *ebiten.Image) {
 		for _, rs := range pg.Results {
 			drawAvatar(s, L, cy+1, 1.5, rs.WAv, t, false)
 			txt(s, rs.W, L+26, cy+2, 8, inkP, -1)
-			txt(s, fmt.Sprintf("%d-%d", rs.SW, rs.SL), x+w/2, cy+2, 8, inkP, 0)
-			txt(s, rs.L, L+W-26, cy+2, 8, inkP2, 1)
-			drawAvatar(s, L+W-18, cy+1, 1.5, rs.LAv, t, true)
+			if rs.Note != "" { // Pong de 4: solo quién ganó
+				txt(s, rs.Note+" PONG X4", x+w/2, cy+2, 8, inkP2, 0)
+			} else {
+				txt(s, fmt.Sprintf("%d-%d", rs.SW, rs.SL), x+w/2, cy+2, 8, inkP, 0)
+				txt(s, rs.L, L+W-26, cy+2, 8, inkP2, 1)
+				drawAvatar(s, L+W-18, cy+1, 1.5, rs.LAv, t, true)
+			}
 			rect(s, L, cy+17, W, 1, paperDk)
 			cy += 22
 		}

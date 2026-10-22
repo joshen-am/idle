@@ -301,11 +301,12 @@ func (o *Overlay) drawBoard(s *ebiten.Image) {
 	if len(rows) > 10 {
 		rows = rows[:10]
 	}
-	w := 440.0
+	w := 480.0
 	h := 76 + float64(len(rows))*26 + 50
 	x, y := o.panel(s, w, h)
 	txt(s, "RANKING DE VICTORIAS", x+16, y+12, 8, colDim, -1)
-	txt(s, "PONG", x+w-110, y+40, 8, colDim, 1)
+	txt(s, "PONG", x+w-170, y+40, 8, colDim, 1)
+	txt(s, "X4", x+w-100, y+40, 8, colDim, 1)
 	txt(s, "TOTAL", x+w-20, y+40, 8, colDim, 1)
 	for i, r := range rows {
 		ry := y + 58 + float64(i)*26
@@ -324,7 +325,8 @@ func (o *Overlay) drawBoard(s *ebiten.Image) {
 		} else if r.Me {
 			txt(s, "TU", x+68+textW(r.Name, 16)+8, ry+6, 8, colAcc, -1)
 		}
-		txt(s, fmt.Sprintf("%d", r.Wins["pong"]), x+w-110, ry, 16, colDim, 1)
+		txt(s, fmt.Sprintf("%d", r.Wins["pong"]), x+w-170, ry, 16, colDim, 1)
+		txt(s, fmt.Sprintf("%d", r.Wins["pong4"]), x+w-100, ry, 16, colDim, 1)
 		txt(s, fmt.Sprintf("%d", r.Total), x+w-20, ry, 16, colInk, 1)
 	}
 	txt(s, "LOS CPU TAMBIEN JUEGAN", x+16, y+h-38, 8, colLine, -1)

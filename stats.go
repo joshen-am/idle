@@ -41,7 +41,7 @@ type Profile struct {
 	Wins map[string]int
 }
 
-var gameNames = map[string]string{"pong": "PONG"}
+var gameNames = map[string]string{"pong": "PONG", "pong4": "X4"}
 
 func dayKey(t time.Time) string { return t.Format("2006-01-02") }
 

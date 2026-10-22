@@ -376,8 +376,8 @@ func (m *Match4) sendState() {
 	}
 	b = append(b, fl, byte(int8(p.Pending)))
 	f(p.Sp)
-	for _, n := range m.links {
-		if n != nil && n.Connected() {
+	for _, n := range m.links { // por el servidor ~6 por segundo (tiene límite); directo, todos
+		if n != nil && n.Connected() && (m.tick%10 == 0 || n.Direct()) {
 			n.SendRaw('Z', b)
 		}
 	}

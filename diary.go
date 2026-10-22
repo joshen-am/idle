@@ -27,6 +27,7 @@ type Result struct {
 	WAv, LAv Avatar
 	W, L     string
 	SW, SL   int
+	Note     string // en vez del marcador (Pong de 4)
 }
 
 type DPage struct {
@@ -319,6 +320,14 @@ func buildDiary(c *Config, now time.Time) *Diary {
 		oa := avOf(m.Opp)
 		if m.OppName == "" {
 			m.OppName = nameOf(m.Opp)
+		}
+		if m.Game == "pong4" {
+			r := Result{WAv: oa, W: m.OppName, L: "X4", Note: "GANA EL", LAv: avAny}
+			if m.Won {
+				r.WAv, r.W = c.Av, me
+			}
+			sports.Results = append(sports.Results, r)
+			continue
 		}
 		if m.Won {
 			sports.Results = append(sports.Results, Result{WAv: c.Av, LAv: oa, W: me, L: m.OppName, SW: m.Me, SL: m.Them})
