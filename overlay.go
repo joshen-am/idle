@@ -101,6 +101,9 @@ type Overlay struct {
 	overLine  string // lo que dice el CPU al terminar
 	toast     string
 	toastAt   time.Time
+	nearAt    time.Time // la última vez que el mouse anduvo cerca de la mascota
+	owesFocus bool      // hicieron clic en Idle: al irse el mouse, el teclado vuelve a su ventana
+	typing    bool      // escribiendo el nombre o la sala
 }
 
 var debugDraw = os.Getenv("MJ_DEBUGDRAW") != ""
@@ -128,8 +131,11 @@ func (o *Overlay) initPet() {
 
 // wantFull: ¿hace falta la ventana del tamaño de la pantalla? Si no, alcanza un cuadrito
 // alrededor de la mascota (pintar eso casi no cuesta).
+// Se agranda apenas el mouse se acerca (no al hacer clic): cambiar el tamaño de la ventana
+// la congela un instante, y así ese instante no se nota.
 func (o *Overlay) wantFull() bool {
-	return o.scene != SceneNone || o.match != nil || o.pet.drag || o.pet.Dying() || !o.byeAt.IsZero()
+	return o.scene != SceneNone || o.match != nil || o.pet.drag || o.pet.Dying() || !o.byeAt.IsZero() ||
+		time.Since(o.nearAt) < 3*time.Second
 }
 
 const smallW, smallH = 260.0, 220.0
@@ -234,18 +240,28 @@ func (o *Overlay) closePanel() {
 		}
 		saveCfg(o.cfg)
 	}
-	if o.autoGame {
-		o.setGame(false)
-		o.autoGame = false
-	}
+	o.stopTyping()
 	o.scene = SceneNone
 }
 
 func (o *Overlay) openProfile() {
-	o.scene, o.sel = SceneProfile, 0
-	if _, game := gin.Peek(); !game { // para escribir el nombre, las teclas tienen que ser de Idle
+	o.scene, o.sel = SceneProfile, -1
+}
+
+// startTyping: clic en NOMBRE o SALA; mientras tanto las teclas son de Idle.
+func (o *Overlay) startTyping(row int) {
+	o.sel, o.typing = row, true
+	if _, game := gin.Peek(); !game {
 		o.setGame(true)
 		o.autoGame = true
+	}
+}
+
+func (o *Overlay) stopTyping() {
+	o.typing = false
+	if o.autoGame {
+		o.setGame(false)
+		o.autoGame = false
 	}
 }
 
@@ -342,6 +358,9 @@ func (o *Overlay) handleKey(k Key) {
 }
 
 func (o *Overlay) textField() *string {
+	if !o.typing {
+		return nil
+	}
 	switch o.sel {
 	case 4:
 		return &o.cfg.Av.Name
@@ -386,7 +405,8 @@ func (o *Overlay) Update() error {
 	}
 
 	// mouse en los paneles: elegir con un clic
-	inPanel := o.scene != SceneNone && o.scene != SceneMatch && o.panelR.has(o.mx, o.my)
+	inPanel := o.scene != SceneNone && o.scene != SceneMatch && o.panelR.has(o.mx, o.my) ||
+		o.scene == SceneMatch && o.overButton()
 	if pressed {
 		o.pressedIn = inPanel
 	}
@@ -491,6 +511,15 @@ func (o *Overlay) Update() error {
 	return nil
 }
 
+func (o *Overlay) overButton() bool {
+	for _, b := range o.btns {
+		if b.has(o.mx, o.my) {
+			return true
+		}
+	}
+	return false
+}
+
 func (o *Overlay) clickButton(id string) {
 	switch {
 	case o.scene == SceneMenu:
@@ -513,27 +542,44 @@ func (o *Overlay) clickButton(id string) {
 			o.profChange(r, -1)
 		}
 	case len(id) == 4 && id[:3] == "pf:":
-		o.sel = int(id[3] - '0')
+		if r := int(id[3] - '0'); r >= 4 {
+			o.startTyping(r)
+		} else {
+			o.stopTyping()
+			o.sel = r
+		}
+	case id == "revancha":
+		o.act = true
+	case id == "salir":
+		o.closeMatch()
 	}
 }
 
 // afterClick: terminó un clic sobre Idle; el teclado vuelve a tu ventana (salvo que haga falta
 // para escribir y no haya teclado de sistema).
 func (o *Overlay) afterClick() {
-	if o.scene == SceneProfile && gin.Status() != HookOK {
+	if o.typing && gin.Status() != HookOK {
 		return
 	}
-	restoreFocus()
+	o.owesFocus = true // se devuelve cuando el mouse se va (devolverlo en cada clic hace saltar la pantalla)
 }
 
 // updateWindow decide si los clics pasan a las apps y cuán seguido se actualiza Idle.
 func (o *Overlay) updateWindow() {
 	near := math.Hypot(o.mx-o.pet.cx, o.my-(o.pet.by-6*o.pet.sc)) < 160
-	interactive := o.scene != SceneMatch && (o.pet.Hit(o.mx, o.my) || o.pet.pressed || o.pet.drag || o.pressedIn ||
-		(o.scene != SceneNone && o.panelR.has(o.mx, o.my)))
+	if math.Hypot(o.mx-o.pet.cx, o.my-(o.pet.by-6*o.pet.sc)) < 260 {
+		o.nearAt = time.Now()
+	}
+	interactive := o.pressedIn || (o.scene == SceneMatch && o.overButton()) ||
+		o.scene != SceneMatch && (o.pet.Hit(o.mx, o.my) || o.pet.pressed || o.pet.drag ||
+			(o.scene != SceneNone && o.panelR.has(o.mx, o.my)))
 	if pass := !interactive; pass != o.passOn {
 		o.passOn = pass
 		ebiten.SetWindowMousePassthrough(pass)
+		if pass && o.owesFocus && !(o.typing && gin.Status() != HookOK) {
+			restoreFocus()
+			o.owesFocus = false
+		}
 	}
 	if o.passOn && time.Since(o.focusAt) > 500*time.Millisecond {
 		trackFocus() // recordar tu ventana activa, para devolverle el teclado
@@ -630,6 +676,21 @@ func ball(dst *ebiten.Image, x, y, w float64, c color.Color) {
 	rect(dst, x+2, y+2, w, w, shadowCol)
 	rect(dst, x-b, y-b, w+2*b, w+2*b, color.NRGBA{25, 25, 25, 220})
 	rect(dst, x, y, w, w, c)
+}
+
+// bigButton: botón que se lee sobre cualquier fondo (en la cancha).
+func (o *Overlay) bigButton(s *ebiten.Image, id, label string, x, y, w float64, bg color.NRGBA) {
+	b := o.button(id, x, y, w, 30)
+	fg := colInk
+	if bg == colAcc {
+		fg = colBg
+	}
+	if b.has(o.mx, o.my) {
+		bg = color.NRGBA{bg.R + (255-bg.R)/5, bg.G + (255-bg.G)/5, bg.B + (255-bg.B)/5, bg.A}
+	}
+	srect(s, b.x, b.y, b.w, b.h, bg)
+	frame(s, b.x, b.y, b.w, b.h, colLine)
+	txt(s, label, b.x+b.w/2, b.y+8, 16, fg, 0)
 }
 
 // panel: recuadro oscuro al lado de la mascota. Devuelve su esquina superior izquierda.
@@ -809,7 +870,7 @@ func (o *Overlay) drawProfile(s *ebiten.Image) {
 		txt(s, l, x+18, ry+4, 8, c, -1)
 		val := o.profValue(r)
 		if r >= 4 {
-			if r == o.sel && (o.tick/30)%2 == 0 {
+			if r == o.sel && o.typing && (o.tick/30)%2 == 0 {
 				val += "_"
 			}
 			col := colInk
@@ -832,7 +893,8 @@ func (o *Overlay) drawProfile(s *ebiten.Image) {
 	b := o.button("listo", x+w-110, y+h-36, 100, 28)
 	rect(s, b.x, b.y, b.w, b.h, colAcc)
 	txt(s, "LISTO", b.x+b.w/2, b.y+7, 16, colBg, 0)
-	txt(s, "ESCRIBE NOMBRE Y SALA", x+16, y+h-28, 8, colLine, -1)
+	txt(s, "CLIC EN NOMBRE O SALA", x+16, y+h-34, 8, colLine, -1)
+	txt(s, "PARA ESCRIBIR", x+16, y+h-20, 8, colLine, -1)
 }
 
 func (o *Overlay) drawSearch(s *ebiten.Image) {
@@ -891,10 +953,13 @@ func (o *Overlay) drawMatch(s *ebiten.Image) {
 	}
 
 	ptxt(s, fmt.Sprintf("%s %d · %d %s", av1.DisplayName(), p.S1, p.S2, av2.DisplayName()), sw/2, 16, 16, colInk, 0)
+	if p.Ph != PhOver && p.Ph != PhDC {
+		o.bigButton(s, "salir", "SALIR", sw-110, 10, 96, colCard)
+	}
 	switch {
 	case p.Ph == PhCount:
 		ptxt(s, strconv.Itoa(int(math.Max(1, math.Ceil(p.Tm)))), sw/2, sh/2-16, 32, colInk, 0)
-		ptxt(s, "↑↓ MUEVES · ESC MENU · ↑ Y ↓ JUNTAS ×2 = TRABAJO", sw/2, sh-60, 8, colDim, 0)
+		ptxt(s, "↑↓ MUEVES · ↑ Y ↓ JUNTAS ×2 = TRABAJO", sw/2, sh-60, 8, colDim, 0)
 		if m.Online() {
 			via, c := "POR SERVIDOR", colDim
 			if m.nw.Direct() {
@@ -908,7 +973,8 @@ func (o *Overlay) drawMatch(s *ebiten.Image) {
 			w = av2
 		}
 		ptxt(s, "GANA "+w.DisplayName(), sw/2, sh/2-24, 16, w.Col(), 0)
-		ptxt(s, "ENTER REVANCHA · ESC MENU", sw/2, sh/2+12, 8, colInk, 0)
+		o.bigButton(s, "revancha", "REVANCHA", sw/2-170, sh/2+70, 160, colAcc)
+		o.bigButton(s, "salir", "SALIR", sw/2+10, sh/2+70, 160, colCard)
 		if o.coinMsg != "" {
 			ptxt(s, o.coinMsg, sw/2, sh/2-60, 16, colAcc, 0)
 		}
@@ -917,7 +983,7 @@ func (o *Overlay) drawMatch(s *ebiten.Image) {
 		}
 	case p.Ph == PhDC:
 		ptxt(s, "SE CORTO LA CONEXION", sw/2, sh/2-24, 16, colErr, 0)
-		ptxt(s, "ENTER VOLVER", sw/2, sh/2+12, 8, colInk, 0)
+		o.bigButton(s, "salir", "VOLVER", sw/2-80, sh/2+20, 160, colCard)
 	case p.Paused:
 		ptxt(s, "UN MOMENTO"+dots(o.tick), sw/2, 52, 8, colDim, 0)
 	}
@@ -946,6 +1012,7 @@ func runOverlay() error {
 		o.menuAction(os.Getenv("MJ_DEMO"))
 	case "rival":
 		o.menuAction("cpu")
+
 	case "online":
 		o.setGame(true)
 		o.startOnline()

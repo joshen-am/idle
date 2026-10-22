@@ -225,7 +225,7 @@ func (o *Overlay) drawToast(s *ebiten.Image, x, y float64) bool {
 }
 
 func (o *Overlay) drawStore(s *ebiten.Image) {
-	w, h := 480.0, 312.0
+	w, h := 640.0, 364.0
 	x, y := o.panel(s, w, h)
 	txt(s, "TIENDA", x+16, y+12, 8, colDim, -1)
 	txt(s, fmt.Sprintf("¤ %d", o.cfg.Coins), x+w-16, y+8, 16, colAcc, 1)
@@ -268,9 +268,9 @@ func (o *Overlay) drawStore(s *ebiten.Image) {
 	}
 	txt(s, label, b.x+b.w/2, b.y+11, 8, col, 0)
 
-	// la lista: dos columnas
+	// la lista: tres columnas de 8
 	for i := 0; i < n; i++ {
-		cx, cy := x+160+float64(i/6)*154, y+70+float64(i%6)*28
+		cx, cy := x+160+float64(i/8)*154, y+70+float64(i%8)*28
 		b := o.button(fmt.Sprintf("st:i:%d", i), cx, cy, 150, 26)
 		nc := colDim
 		if i == sel {
@@ -290,9 +290,8 @@ func (o *Overlay) drawStore(s *ebiten.Image) {
 		}
 		txt(s, st, cx+144, cy+9, 8, sc, 1)
 	}
-	if !o.drawToast(s, x+160, y+h-60) {
-		txt(s, "GANA ¤ JUGANDO. LE GANAS A UN", x+160, y+h-64, 8, colLine, -1)
-		txt(s, "CPU DIFICIL = MAS MONEDAS", x+160, y+h-50, 8, colLine, -1)
+	if !o.drawToast(s, x+160, y+h-56) {
+		txt(s, "CADA VICTORIA DA ¤ (MAS SI EL RIVAL ES DIFICIL)", x+160, y+h-56, 8, colLine, -1)
 	}
 	o.closeBtn(s, x+w-110, y+h-38)
 }
