@@ -332,51 +332,6 @@ func (o *Overlay) drawBoard(s *ebiten.Image) {
 	o.closeBtn(s, x+w-110, y+h-38)
 }
 
-func (o *Overlay) drawDiary(s *ebiten.Image) {
-	if o.diary == nil {
-		o.diary = buildDiary(&o.cfg, time.Now())
-	}
-	d := o.diary
-	w, h := 500.0, 344.0
-	x, y := o.panel(s, w, h)
-	txt(s, "EL DIARIO IDLE", x+16, y+12, 16, colInk, -1)
-	txt(s, fmt.Sprintf("N.%d · %s", d.No, d.Date), x+w-16, y+10, 8, colDim, 1)
-	if o.tipToday {
-		txt(s, "+10 ¤ POR LEER", x+w-16, y+24, 8, colAcc, 1)
-	}
-	rect(s, x+16, y+38, w-32, 2, colLine)
-	o.diaryPage = clampInt(o.diaryPage, 0, len(d.Pages)-1)
-	ly := y + 50
-	if len(d.Pages) > 0 {
-		for _, l := range d.Pages[o.diaryPage] {
-			if l.s != "" {
-				txt(s, l.s, x+18, ly, l.size, l.c, -1)
-			}
-			if l.size > 8 {
-				ly += 28
-			} else {
-				ly += 14
-			}
-		}
-	}
-	if len(d.Pages) > 1 {
-		b := o.button("dy:prev", x+12, y+h-40, 34, 28)
-		c := colAcc
-		if o.diaryPage == 0 {
-			c = colLine
-		}
-		txt(s, "◀", b.x+b.w/2, b.y+6, 16, c, 0)
-		txt(s, fmt.Sprintf("%d/%d", o.diaryPage+1, len(d.Pages)), x+80, y+h-30, 8, colDim, 0)
-		b = o.button("dy:next", x+112, y+h-40, 34, 28)
-		c = colAcc
-		if o.diaryPage == len(d.Pages)-1 {
-			c = colLine
-		}
-		txt(s, "▶", b.x+b.w/2, b.y+6, 16, c, 0)
-	}
-	o.closeBtn(s, x+w-110, y+h-38)
-}
-
 func clampInt(v, lo, hi int) int {
 	if v > hi {
 		v = hi

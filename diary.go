@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"image/color"
 	"math/rand"
 	"sort"
 	"strings"
@@ -12,20 +11,39 @@ import (
 // El Diario Idle: todos los días a las 9 cuenta, con mucho drama, lo que pasó ayer en el mundo
 // de los CPU y lo que hicieron los jugadores. (Sin tildes: la letra pixelada no las tiene bien.)
 
-type dline struct {
-	s    string
-	c    color.NRGBA
-	size float64
+// Una edición: varias páginas de diario antiguo, con "fotos" de los personajes.
+type Photo struct {
+	Kind string   // win, duo, prank, fight, peace, portrait, visit, podium, cast
+	Avs  []Avatar // protagonistas
+	Tag  string   // variante (portrait: sleep, smug, angry, fade, fast)
+}
+
+type Article struct {
+	Title, Text string
+	Photo       *Photo
+}
+
+type Result struct {
+	WAv, LAv Avatar
+	W, L     string
+	SW, SL   int
+}
+
+type DPage struct {
+	Section string
+	Head    string // titular (portada)
+	Arts    []Article
+	Results []Result
+	Ad      string
 }
 
 type Diary struct {
 	Day   string
 	No    int
 	Date  string
-	Pages [][]dline
+	Pages []DPage
 }
 
-const diaryCols, diaryRows = 56, 17 // caracteres por línea (letra de 8) y líneas por página
 
 var (
 	diasES  = []string{"DOMINGO", "LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES", "SABADO"}
@@ -191,35 +209,51 @@ func buildDiary(c *Config, now time.Time) *Diary {
 	if d.No < 1 {
 		d.No = 1
 	}
-	var paras []dline
-	add := func(s string, col color.NRGBA) { paras = append(paras, dline{s: s, c: col, size: 8}) }
-	gap := func() { paras = append(paras, dline{}) }
-
-	if c.LastDiary == "" { // primera edición: presentación
-		add("¡BIENVENIDOS AL DIARIO IDLE!", colAcc)
-		add("TODOS LOS DIAS A LAS 9 TE CONTAMOS LO QUE PASO MIENTRAS TRABAJABAS. CONOCE A LOS VECINOS:", colInk)
-		for _, cp := range cpus {
-			add(cp.Name+": "+cp.Bio+".", cp.Av.Col())
+	avOf := func(id string) Avatar {
+		if cp := cpuByID(id); cp != nil {
+			return cp.Av
 		}
-		add("JUEGAN SOLOS CUANDO NO ESTAS, SE HACEN AMIGOS, SE ODIAN Y SUBEN EN EL RANKING. NO DEJES QUE TE PASEN.", colDim)
-		gap()
+		if id == "yo" {
+			return c.Av
+		}
+		for _, f := range c.Friends {
+			if f.ID == id || f.Name == id {
+				return f.Av
+			}
+		}
+		return avAny
 	}
+	portraitTag := map[string]string{"cpu:mochi": "sleep", "cpu:bigotes": "smug", "cpu:karl": "angry", "cpu:bit": "fade", "cpu:turbo": "fast"}
 
 	evs := w.Days[yk]
-	// titular: lo más jugoso del día
-	head := "UN DIA TRANQUILO EN IDLE. (MENTIRA.)"
+	front := DPage{Section: "PORTADA", Head: "UN DIA TRANQUILO EN IDLE. (MENTIRA.)"}
+	sports := DPage{Section: "DEPORTES"}
+	social := DPage{Section: "SOCIEDAD"}
+	hood := DPage{Section: "VECINOS"}
+
+	// portada: lo más jugoso del día
 	best := 0
 	for _, e := range evs {
-		score, h := 0, ""
+		score, h, txt := 0, "", ""
+		var ph *Photo
 		switch e.Kind {
 		case "enemies":
 			score, h = 6, fill("¡ESCANDALO! {A} Y {B} ROMPEN RELACIONES", "{A}", name(e.A), "{B}", name(e.B))
+			txt = "YA NO SE HABLAN. SOLO SE MIRAN FEO DESDE LEJOS. LA OFICINA ESTA DIVIDIDA."
+			ph = &Photo{Kind: "fight", Avs: []Avatar{avOf(e.A), avOf(e.B)}}
 		case "friends":
 			score, h = 5, fill("¡NACE UNA AMISTAD! {A} Y {B} INSEPARABLES", "{A}", name(e.A), "{B}", name(e.B))
+			txt = "YA TIENEN PULSERAS IGUALES Y UN SALUDO SECRETO QUE NADIE ENTIENDE."
+			ph = &Photo{Kind: "duo", Avs: []Avatar{avOf(e.A), avOf(e.B)}}
 		case "peace":
 			score, h = 4, fill("¡PAZ MUNDIAL! {A} Y {B} SE ABRAZAN", "{A}", name(e.A), "{B}", name(e.B))
+			txt = "TRAS SEMANAS DE MIRADAS FEAS, HICIERON LAS PACES. TODA LA OFICINA LLORO."
+			ph = &Photo{Kind: "peace", Avs: []Avatar{avOf(e.A), avOf(e.B)}}
 		case "match":
 			wa, lb := cpuByID(e.A), cpuByID(e.B)
+			ph = &Photo{Kind: "win", Avs: []Avatar{wa.Av, lb.Av}}
+			txt = fill("{A} LE GANO {S} A {B}. ", "{A}", wa.Name, "{B}", lb.Name, "{S}", fmt.Sprintf("%d-%d", e.SA, e.SB)) +
+				fill(pick(cpuLoseLines[lb.ID]), "{B}", wa.Name)
 			switch {
 			case lb.Skill-wa.Skill > .15:
 				score, h = 4, fill("¡SORPRESA! {A} DERROTA A {B}", "{A}", wa.Name, "{B}", lb.Name)
@@ -227,135 +261,162 @@ func buildDiary(c *Config, now time.Time) *Diary {
 				score, h = 3, fill("{A} ESTA IMPARABLE: {N} SEGUIDAS", "{A}", wa.Name, "{N}", fmt.Sprint(e.N))
 			case e.SB == 0:
 				score, h = 3, fill("PALIZA: {A} 7-0 {B}", "{A}", wa.Name, "{B}", lb.Name)
+			default:
+				score, h = 1, fill("{A} SE IMPONE A {B}", "{A}", wa.Name, "{B}", lb.Name)
 			}
 		case "real":
 			if e.Tag == "gane" && cpuByID(e.A) != nil {
 				score, h = 2, fill("{P} HUMILLA A {A}", "{P}", me, "{A}", nameOf(e.A))
+				ph = &Photo{Kind: "win", Avs: []Avatar{c.Av, avOf(e.A)}}
+				txt = fill("{P} LE GANO {S} A {A}. ", "{P}", me, "{A}", nameOf(e.A), "{S}", fmt.Sprintf("%d-%d", e.SA, e.SB)) +
+					fill(pick(cpuLoseLines[e.A]), "{B}", me)
 			}
 		}
 		if score > best {
-			best, head = score, h
+			best, front.Head = score, h
+			front.Arts = []Article{{Text: txt, Photo: ph}}
 		}
 	}
-	paras = append(paras, dline{s: head, c: colAcc, size: 16})
-	gap()
-
-	if len(evs) == 0 && c.LastDiary != "" {
-		add("AYER NO PASO NADA. LOS CPU ESTABAN DE VACACIONES. SOSPECHOSO.", colDim)
+	if len(front.Arts) == 0 {
+		cp := cpus[r.Intn(len(cpus))]
+		front.Arts = []Article{{Text: "LOS CPU SE PASARON EL DIA MIRANDO EL TECHO. ALGO TRAMAN.",
+			Photo: &Photo{Kind: "portrait", Avs: []Avatar{cp.Av}, Tag: portraitTag[cp.ID]}}}
 	}
-	// partidas de los CPU entre ellos
+	if c.LastDiary == "" { // primera edición
+		front.Head = "NACE EL DIARIO IDLE"
+		front.Arts = []Article{{Text: "CADA DIA A LAS 9 LES CONTAREMOS LO QUE PASO MIENTRAS TRABAJABAN. " +
+			"CONOZCAN A LOS VECINOS EN LA PAGINA 2.", Photo: &Photo{Kind: "cast"}}}
+		cast := DPage{Section: "LOS VECINOS"}
+		for _, cp := range cpus {
+			cast.Arts = append(cast.Arts, Article{Title: cp.Name, Text: cp.Bio + ".",
+				Photo: &Photo{Kind: "portrait", Avs: []Avatar{cp.Av}, Tag: portraitTag[cp.ID]}})
+		}
+		d.Pages = append(d.Pages, front, cast)
+		front.Section = "" // ya se agregó
+	}
+
+	// deportes: resultados de los CPU y de los jugadores
+	var quote *Article
 	for _, e := range evs {
 		if e.Kind != "match" {
 			continue
 		}
 		wa, lb := cpuByID(e.A), cpuByID(e.B)
-		s := fill("{A} LE GANO {S} A {B}.", "{A}", wa.Name, "{B}", lb.Name, "{S}", fmt.Sprintf("%d-%d", e.SA, e.SB))
-		switch {
-		case e.SB == 0:
-			s += " SIN PIEDAD."
-		case e.SB == 6:
-			s += " AL BORDE DEL INFARTO."
+		sports.Results = append(sports.Results, Result{WAv: wa.Av, LAv: lb.Av, W: wa.Name, L: lb.Name, SW: e.SA, SL: e.SB})
+		if quote == nil {
+			lines, who := cpuWinLines[wa.ID], wa
+			if r.Intn(2) == 0 {
+				lines, who = cpuLoseLines[lb.ID], lb
+			}
+			q := fill(pick(lines), "{B}", map[bool]string{true: lb.Name, false: wa.Name}[who == wa])
+			quote = &Article{Title: "LA FRASE DEL DIA", Text: q, Photo: &Photo{Kind: "portrait", Avs: []Avatar{who.Av}, Tag: portraitTag[who.ID]}}
 		}
-		if r.Intn(2) == 0 {
-			s += " " + fill(pick(cpuWinLines[wa.ID]), "{B}", lb.Name)
-		} else {
-			s += " " + fill(pick(cpuLoseLines[lb.ID]), "{B}", wa.Name)
-		}
-		add(s, wa.Av.Col())
 	}
-	// vida diaria, parejas y relaciones
+	for _, m := range c.History {
+		if m.Day != yk {
+			continue
+		}
+		oa := avOf(m.Opp)
+		if m.OppName == "" {
+			m.OppName = nameOf(m.Opp)
+		}
+		if m.Won {
+			sports.Results = append(sports.Results, Result{WAv: c.Av, LAv: oa, W: me, L: m.OppName, SW: m.Me, SL: m.Them})
+		} else {
+			sports.Results = append(sports.Results, Result{WAv: oa, LAv: c.Av, W: m.OppName, L: me, SW: m.Them, SL: m.Me})
+		}
+	}
+	if len(sports.Results) > 7 { // resumido: lo último
+		sports.Results = sports.Results[len(sports.Results)-7:]
+	}
+	if quote != nil {
+		sports.Arts = append(sports.Arts, *quote)
+	}
+
+	// sociedad: amistades, bromas y peleas
+	for _, e := range evs {
+		var a Article
+		A, B := avOf(e.A), avOf(e.B)
+		switch e.Kind {
+		case "duo":
+			kind := map[string]string{"amistad": "duo", "broma": "prank", "pelea": "fight"}[e.Tag]
+			a = Article{Title: map[string]string{"amistad": "TERNURA", "broma": "BROMA", "pelea": "PELEA"}[e.Tag],
+				Text: fill(choose(duoLines[e.Tag], e.N), "{A}", name(e.A), "{B}", name(e.B)), Photo: &Photo{Kind: kind, Avs: []Avatar{A, B}}}
+		case "friends":
+			a = Article{Title: "NUEVA AMISTAD", Text: fill("{A} Y {B} SON OFICIALMENTE MEJORES AMIGOS.", "{A}", name(e.A), "{B}", name(e.B)),
+				Photo: &Photo{Kind: "duo", Avs: []Avatar{A, B}}}
+		case "enemies":
+			a = Article{Title: "ENEMISTAD", Text: fill("{A} Y {B} YA NO SE HABLAN.", "{A}", name(e.A), "{B}", name(e.B)),
+				Photo: &Photo{Kind: "fight", Avs: []Avatar{A, B}}}
+		case "peace":
+			a = Article{Title: "PACES", Text: fill("{A} Y {B} HICIERON LAS PACES.", "{A}", name(e.A), "{B}", name(e.B)),
+				Photo: &Photo{Kind: "peace", Avs: []Avatar{A, B}}}
+		default:
+			continue
+		}
+		if len(social.Arts) < 3 {
+			social.Arts = append(social.Arts, a)
+		}
+	}
+
+	// vecinos: la vida diaria, visitas y lo que se compraron
 	for _, e := range evs {
 		switch e.Kind {
 		case "life":
-			add(choose(cpuLifeLines[e.A], e.N), colInk)
-		case "duo":
-			add(fill(choose(duoLines[e.Tag], e.N), "{A}", name(e.A), "{B}", name(e.B)), colInk)
-		case "friends":
-			add(fill("¡NUEVA AMISTAD! {A} Y {B} AHORA SON INSEPARABLES. YA TIENEN PULSERAS IGUALES.", "{A}", name(e.A), "{B}", name(e.B)), colOk)
-		case "enemies":
-			add(fill("¡ENEMISTAD OFICIAL! {A} Y {B} YA NO SE HABLAN. SOLO SE MIRAN FEO.", "{A}", name(e.A), "{B}", name(e.B)), colErr)
-		case "peace":
-			add(fill("{A} Y {B} HICIERON LAS PACES. TODA LA OFICINA LLORO.", "{A}", name(e.A), "{B}", name(e.B)), colOk)
+			if len(hood.Arts) < 2 {
+				hood.Arts = append(hood.Arts, Article{Title: nameOf(e.A), Text: choose(cpuLifeLines[e.A], e.N),
+					Photo: &Photo{Kind: "portrait", Avs: []Avatar{avOf(e.A)}, Tag: portraitTag[e.A]}})
+			}
 		case "visit":
 			s := visitLines[e.A]
 			if e.N%2 == 0 {
 				s = visitAny[e.N/2%len(visitAny)]
 			}
-			add(fill(s, "{A}", nameOf(e.A), "{P}", e.B), colDim)
+			hood.Arts = append(hood.Arts, Article{Title: "VISITA", Text: fill(s, "{A}", nameOf(e.A), "{P}", e.B),
+				Photo: &Photo{Kind: "visit", Avs: []Avatar{avOf(e.A)}}})
 		}
-	}
-
-	// lo que hicieron los jugadores
-	type tally struct {
-		name      string
-		won, lost int
-	}
-	var order []string
-	tl := map[string]*tally{}
-	for _, m := range c.History {
-		if m.Day != yk {
-			continue
-		}
-		t := tl[m.Opp]
-		if t == nil {
-			n := m.OppName
-			if cp := cpuByID(m.Opp); cp != nil {
-				n = cp.Name
-			}
-			t = &tally{name: n}
-			tl[m.Opp] = t
-			order = append(order, m.Opp)
-		}
-		if m.Won {
-			t.won++
-		} else {
-			t.lost++
-		}
-	}
-	if len(order) > 0 {
-		gap()
-	}
-	for _, id := range order {
-		t := tl[id]
-		s := fill("{P} JUGO {N} CONTRA {B}: GANO {W} Y PERDIO {L}.", "{P}", me, "{N}", plural(t.won+t.lost, "PARTIDA", "PARTIDAS"),
-			"{B}", t.name, "{W}", fmt.Sprint(t.won), "{L}", fmt.Sprint(t.lost))
-		if cp := cpuByID(id); cp != nil {
-			if t.won > t.lost {
-				s += " " + fill(pick(cpuLoseLines[id]), "{B}", me)
-			} else {
-				s += " " + fill(pick(cpuWinLines[id]), "{B}", me)
-			}
-		} else if t.won > t.lost {
-			s += " " + fill("SE RUMOREA QUE {B} PIDIO LA REVANCHA DE RODILLAS.", "{B}", t.name)
-		} else if t.lost > t.won {
-			s += " " + fill("{B} LO CUENTA EN CADA REUNION.", "{B}", t.name)
-		} else {
-			s += " EMPATE TECNICO. LA TENSION SE CORTA CON CUCHILLO."
-		}
-		add(s, c.Av.Col())
 	}
 	for _, b := range c.Bought {
 		if b.Day == yk {
-			add(fill(pick([]string{"{P} ESTRENO {X}. BIGOTES DICE QUE ES MUCHO.", "{P} SE COMPRO {X}. TURBO DICE QUE SE LO COPIO.",
-				"{P} APARECIO CON {X}. KARL LO CONSIDERA UNA PROVOCACION."}), "{P}", me, "{X}", b.Item), colAcc)
+			hood.Arts = append(hood.Arts, Article{Title: "MODA", Text: fill(pick([]string{"{P} ESTRENO {X}. BIGOTES DICE QUE ES MUCHO.",
+				"{P} SE COMPRO {X}. TURBO DICE QUE SE LO COPIO.", "{P} APARECIO CON {X}. KARL LO CONSIDERA UNA PROVOCACION."}), "{P}", me, "{X}", b.Item),
+				Photo: &Photo{Kind: "portrait", Avs: []Avatar{c.Av}, Tag: "smug"}})
+			break
 		}
 	}
-	if len(order) == 0 && c.LastDiary != "" {
-		add(fill(pick([]string{"{P} NO JUGO NADA AYER. LOS CPU EMPIEZAN A TRAMAR COSAS.",
+	played := false
+	for _, m := range c.History {
+		played = played || m.Day == yk
+	}
+	if !played && c.LastDiary != "" {
+		hood.Arts = append(hood.Arts, Article{Title: "AUSENTE", Text: fill(pick([]string{"{P} NO JUGO NADA AYER. LOS CPU EMPIEZAN A TRAMAR COSAS.",
 			"NI UNA PARTIDA DE {P} AYER. KARL LO TOMA COMO ALGO PERSONAL.",
-			"{P} SE TOMO EL DIA LIBRE DEL PONG. TURBO YA SE CREE EL DUENO DE LA CANCHA."}), "{P}", me), colDim)
+			"{P} SE TOMO EL DIA LIBRE. TURBO YA SE CREE EL DUENO DE LA CANCHA."}), "{P}", me),
+			Photo: &Photo{Kind: "portrait", Avs: []Avatar{c.Av}, Tag: "sleep"}})
+	}
+	if len(hood.Arts) > 4 {
+		hood.Arts = hood.Arts[:4]
 	}
 
-	// ranking
+	// ranking y clasificados
 	board := c.leaderboardAt(w, yk)
-	gap()
+	rank := DPage{Section: "RANKING", Ad: pick(classifieds) + "\n" + pick(classifieds)}
+	var top []Avatar
+	for i := 0; i < len(board) && i < 3; i++ {
+		top = append(top, board[i].Av)
+	}
+	text := ""
 	if len(board) > 0 {
 		l := board[0]
-		s := fmt.Sprintf("RANKING: LIDERA %s CON %s.", l.Name, plural(l.Total, "VICTORIA", "VICTORIAS"))
+		text = fmt.Sprintf("LIDERA %s CON %s.", l.Name, plural(l.Total, "VICTORIA", "VICTORIAS"))
 		if l.CPU {
-			s += " ¡LOS HUMANOS DEBEN REACCIONAR!"
+			text += " ¡LOS HUMANOS DEBEN REACCIONAR!"
 		}
-		add(s, colInk)
+		for i, b := range board {
+			if b.Me && i > 0 {
+				text += fmt.Sprintf(" {P} VA #%d.", i+1)
+			}
+		}
 		prev := c.leaderboardAt(simulate(c.Room, yday.AddDate(0, 0, -1), c.worldPlayers(), c.History), dayKey(yday.AddDate(0, 0, -1)))
 		pos := map[string]int{}
 		for i, b := range prev {
@@ -363,51 +424,35 @@ func buildDiary(c *Config, now time.Time) *Diary {
 		}
 		for i, b := range board {
 			if p, ok := pos[b.ID]; ok && i < p && b.CPU {
-				add(fill("{A} SUBIO AL PUESTO #{N}. YA PIDE AUTOGRAFOS.", "{A}", b.Name, "{N}", fmt.Sprint(i+1)), b.Av.Col())
+				text += fill(" {A} SUBIO AL #{N} Y YA PIDE AUTOGRAFOS.", "{A}", b.Name, "{N}", fmt.Sprint(i+1))
 				break
 			}
 		}
 	}
+	rank.Arts = []Article{{Text: fill(text, "{P}", me), Photo: &Photo{Kind: "podium", Avs: top}}}
 
-	// a líneas y páginas
-	var lines []dline
-	for _, p := range paras {
-		if p.s == "" {
-			lines = append(lines, p)
-			continue
-		}
-		n := diaryCols
-		if p.size > 8 {
-			n = diaryCols / 2
-		}
-		for _, l := range wrapText(p.s, n) {
-			lines = append(lines, dline{s: l, c: p.c, size: p.size})
-		}
+	if n := len(social.Arts) + len(hood.Arts); n > 0 && n <= 4 { // poca noticia: una sola página
+		social.Section = "SOCIEDAD Y VECINOS"
+		social.Arts = append(social.Arts, hood.Arts...)
+		hood.Arts = nil
 	}
-	var page []dline
-	nrow := 0
-	for _, l := range lines {
-		h := 1
-		if l.size > 8 {
-			h = 2
+	for _, p := range []DPage{front, sports, social, hood, rank} {
+		if p.Section != "" && (len(p.Arts) > 0 || len(p.Results) > 0) {
+			d.Pages = append(d.Pages, p)
 		}
-		if l.s == "" && nrow == 0 {
-			continue // la página no empieza con un espacio
-		}
-		if nrow+h > diaryRows {
-			d.Pages = append(d.Pages, page)
-			page, nrow = nil, 0
-			if l.s == "" {
-				continue
-			}
-		}
-		page = append(page, l)
-		nrow += h
-	}
-	if len(page) > 0 {
-		d.Pages = append(d.Pages, page)
 	}
 	return d
+}
+
+var classifieds = []string{
+	"SE VENDE PALETA CASI NUEVA. SOLO PERDIO 40 PARTIDOS. PREGUNTAR POR TURBO.",
+	"BUSCO SOCIO DE SIESTA. REQUISITO: NO RONCAR. ESCRIBIR A MOCHI.",
+	"KARL DA CLASES DE RENCOR. LA PRIMERA ES GRATIS. LA SEGUNDA NO SE OLVIDA.",
+	"SE BUSCA CALCETIN PERDIDO. RECOMPENSA: OTRO CALCETIN. BIT.",
+	"BIGOTES ARRIENDA CAJA DE CARTON CON VISTA AL TECLADO. SOLO GENTE ELEGANTE.",
+	"SE REGALA TROFEO DE PARTICIPACION. NUNCA USADO. TURBO.",
+	"VENDO ANTENA DE ROBOT. CAPTA 3 CANALES Y UN CHISME.",
+	"SE NECESITA ARBITRO PARA PONG. QUE NO LE TENGA MIEDO A KARL.",
 }
 
 func plural(n int, one, many string) string {

@@ -1010,6 +1010,7 @@ func runOverlay() error {
 		o.startCPU(&cpus[0])
 	case "tienda", "ranking", "diario":
 		o.menuAction(os.Getenv("MJ_DEMO"))
+		fmt.Sscanf(os.Getenv("MJ_PAGE"), "%d", &o.diaryPage)
 	case "rival":
 		o.menuAction("cpu")
 
