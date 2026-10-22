@@ -1,0 +1,11 @@
+=== RUN   TestConexionReal
+17:43:31.976 servidor: llega ID-TAKEN de 
+17:43:32.024 servidor: respuesta ID-TAKEN (id idle-v1-r-x7)
+17:43:32.331 servidor: llega OPEN de 
+17:43:32.331 servidor: respuesta OPEN (id idle-v1-g168452b510da28ba)
+    net_test.go:54: conectado; anfitrión=false
+17:43:33.563 directo: probando [127.0.0.1:57583 192.168.64.15:57583]
+    net_test.go:74: directo=false
+--- PASS: TestConexionReal (6.20s)
+PASS
+ok  	idle	6.320s
