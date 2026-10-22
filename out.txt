@@ -1,0 +1,12 @@
+=== RUN   TestServidoresTURN
+    turn_test.go:58: no         turn:eu-0.turn.peerjs.com:3478
+    turn_test.go:58: no         turn:eu-0.turn.peerjs.com:3478?transport=tcp
+    turn_test.go:58: no         turn:us-0.turn.peerjs.com:3478
+    turn_test.go:58: no         turn:openrelay.metered.ca:80
+    turn_test.go:58: no         turn:openrelay.metered.ca:443
+    turn_test.go:58: no         turn:openrelay.metered.ca:443?transport=tcp
+    turn_test.go:58: no         turn:staticauth.openrelay.metered.ca:443?transport=tcp
+    turn_test.go:58: no         turns:openrelay.metered.ca:443?transport=tcp
+--- PASS: TestServidoresTURN (138.30s)
+PASS
+ok  	idle	138.358s
