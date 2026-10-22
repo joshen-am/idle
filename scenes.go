@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -63,12 +64,14 @@ func wrapInt(v, d, n int) int { return ((v+d)%n + n) % n }
 
 func (o *Overlay) sceneClick(id string) {
 	var n int
-	fmt.Sscanf(id[5:], "%d", &n)
+	if i := strings.LastIndexByte(id, ':'); i >= 0 {
+		fmt.Sscanf(id[i+1:], "%d", &n) // "st:i:3", "cp:2"...
+	}
 	switch {
-	case id[:5] == "st:t:":
+	case strings.HasPrefix(id, "st:t:"):
 		o.storeTab = n
 		o.storeSel = int(*slot(&o.cfg.Av, storeCats[n].key))
-	case id[:5] == "st:i:":
+	case strings.HasPrefix(id, "st:i:"):
 		if o.storeSel == n {
 			o.buy() // segundo clic en el mismo: comprar / ponérselo
 		}
@@ -79,8 +82,7 @@ func (o *Overlay) sceneClick(id string) {
 		o.diaryPage = max(0, o.diaryPage-1)
 	case id == "dy:next" && o.diary != nil:
 		o.diaryPage = min(len(o.diary.Pages)-1, o.diaryPage+1)
-	case id[:3] == "cp:":
-		fmt.Sscanf(id[3:], "%d", &n)
+	case strings.HasPrefix(id, "cp:") && n < len(cpus):
 		o.startCPU(&cpus[n])
 	}
 }
