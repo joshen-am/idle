@@ -69,6 +69,7 @@ type Pong4 struct {
 	Predict bool
 	Mine    int // invitado: mi lado (mis golpes los decido yo)
 	OnHit   func(side int, rel float64)
+	Reached [4]int // cuántas veces llegó la bola a cada paleta (pruebas)
 }
 
 func NewPong4() *Pong4 {
@@ -385,6 +386,9 @@ func (p *Pong4) moveBall(dt float64) {
 			}
 			c := p.along(s)
 			corner := c < Corner4 || c > F4-Corner4
+			if !corner && p.Alive(s) && p.Pending != s {
+				p.Reached[s]++
+			}
 			switch {
 			case corner || !p.Alive(s) && !p.Predict:
 				p.bounceWall(s)

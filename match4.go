@@ -69,6 +69,9 @@ type Match4 struct {
 	dispX     float64 // anfitrión: bola mostrada (suaviza los saltos cuando llega un golpe atrasado)
 	dispY     float64
 	stuck     float64
+	claimsOK  int // anfitrión: avisos de golpe aceptados / rechazados (para las pruebas)
+	claimsBad int
+	myHits    int // invitado: golpes que vi en mi pantalla
 }
 
 func NewMatch4(room string, me Avatar, prof Profile, snd *Sound) *Match4 {
@@ -337,7 +340,11 @@ func (m *Match4) updateHost(dir float64, hidden bool) {
 			direct = direct && n.Direct()
 			for _, k := range n.TakeQueue() {
 				if len(k) >= 5 && int(k[0]) == i {
-					p.RemoteHit(i, float64(math.Float32frombits(binary.LittleEndian.Uint32(k[1:]))))
+					if p.RemoteHit(i, float64(math.Float32frombits(binary.LittleEndian.Uint32(k[1:])))) {
+						m.claimsOK++
+					} else {
+						m.claimsBad++
+					}
 				}
 			}
 		}
@@ -469,6 +476,7 @@ func (m *Match4) updateGuest(dir float64, hidden bool) {
 	if p.OnHit == nil {
 		p.OnHit = func(side int, rel float64) {
 			m.hitAt, m.hitLocal = m.tick, m.clock
+			m.myHits++
 			m.hitMsg = binary.LittleEndian.AppendUint32([]byte{byte(side)}, math.Float32bits(float32(rel)))
 			m.snd.Play(EvHit1)
 			m.flash[side] = -.5 // destello de golpe (no de vida perdida)
