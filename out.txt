@@ -1,0 +1,5 @@
+=== RUN   TestServidorRitmo
+    rate_test.go:53: ritmo 30/s: CORTADA a los 10.1s tras 302 enviados, 296 recibidos (a: failed to get reader: received close frame: status = StatusNormalClosure and reason = "")
+--- PASS: TestServidorRitmo (10.93s)
+PASS
+ok  	idle	10.979s
