@@ -432,7 +432,16 @@ func (p *Pong4) RemoteHit(s int, rel float64) bool {
 	default:
 		d = math.Abs(p.X + BS4/2 - lineOf(s))
 	}
-	if p.Pending == s || toward && d < 45 {
+	if p.Pending == s {
+		waited := p.T - p.pendAt
+		p.Hit(s, rel)
+		// la golpeó a tiempo en su pantalla: la bola recupera lo que esperó el aviso (así los
+		// demás, que ya la vieron rebotar, no la ven volver atrás)
+		p.moveBall(waited)
+		p.anchor()
+		return true
+	}
+	if toward && d < 45 {
 		p.Hit(s, rel)
 		return true
 	}

@@ -176,7 +176,8 @@ func (o *Overlay) drawMatch4(s *ebiten.Image) {
 			al := float64(i+1) / float64(len(m.trail)) * .35
 			rect(s, X(t[0]+1), Y(t[1]+1), (BS4-2)*k, (BS4-2)*k, fade(shade(ballCol, .8), al))
 		}
-		ball(s, X(p.X), Y(p.Y), BS4*k, ballCol)
+		bx, by := m.BallPos()
+		ball(s, X(bx), Y(by), BS4*k, ballCol)
 		// velocímetro: va subiendo
 		ptxt(s, fmt.Sprintf("VELOCIDAD %d", int(p.Sp/10)), ox+F4*k, oy-24, 8, colDim, 1)
 	}

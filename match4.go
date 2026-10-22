@@ -66,6 +66,9 @@ type Match4 struct {
 	zAt       [3]time.Time
 	zSeqSent  [3]uint8
 	zSeq      uint8
+	dispX     float64 // anfitrión: bola mostrada (suaviza los saltos cuando llega un golpe atrasado)
+	dispY     float64
+	stuck     float64
 }
 
 func NewMatch4(room string, me Avatar, prof Profile, snd *Sound) *Match4 {
@@ -346,6 +349,31 @@ func (m *Match4) updateHost(dir float64, hidden bool) {
 	p.Paused = paused
 	p.Step(dirs, move, Dt)
 	m.sendState()
+	if d := math.Hypot(p.X-m.dispX, p.Y-m.dispY); p.Ph == PhPlay && d > 8 && d < 250 {
+		mx, my := limitVec(p.X-m.dispX, p.Y-m.dispY, math.Max(12, p.Sp*Dt*2))
+		m.dispX, m.dispY = m.dispX+mx, m.dispY+my
+	} else {
+		m.dispX, m.dispY = p.X, p.Y
+	}
+	// seguro: si la bola quedó quieta o rota mucho rato, se vuelve a sacar
+	if p.Ph == PhPlay && p.Pending < 0 && (p.VX == 0 && p.VY == 0 || math.IsNaN(p.X+p.Y+p.VX+p.VY)) {
+		m.stuck += Dt
+		if m.stuck > 1 {
+			logf("x4: bola trabada (%.0f,%.0f v=%.0f,%.0f), saque de nuevo", p.X, p.Y, p.VX, p.VY)
+			p.serve()
+			m.stuck = 0
+		}
+	} else {
+		m.stuck = 0
+	}
+}
+
+// BallPos: dónde dibujar la bola.
+func (m *Match4) BallPos() (float64, float64) {
+	if m.host {
+		return m.dispX, m.dispY
+	}
+	return m.p.X, m.p.Y
 }
 
 const zLen = 2 + 4*7 + 2 + 1 + 16 + 4 + 2 + 4 + EvCount + 2 + 4
@@ -487,8 +515,12 @@ func (m *Match4) updateGuest(dir float64, hidden bool) {
 		} else {
 			tx, ty, svx, svy := m.simFrom(ax, ay, avx, avy, age+lat)
 			justHit := m.clock-m.hitLocal < .5 && (avx*p.VX+avy*p.VY) < 0 // mi rebote todavía no le llega
-			if !justHit {
-				if math.Hypot(tx-p.X, ty-p.Y) > 150 || p.VX == 0 && p.VY == 0 {
+			// se me pasó y el anfitrión espera mi aviso (que no va a llegar): la bola queda afuera
+			// el anfitrión espera el aviso de golpe de alguien: hasta que se resuelva, sigo con lo mío
+			// (si se me pasó a mí, la bola queda afuera; si fue otro, la vi rebotar)
+			waiting := p.Pending >= 0
+			if !justHit && !waiting {
+				if math.Hypot(tx-p.X, ty-p.Y) > 240 || p.VX == 0 && p.VY == 0 {
 					p.X, p.Y, m.corrX, m.corrY = tx, ty, 0, 0
 				} else {
 					m.corrX, m.corrY = tx-p.X, ty-p.Y
@@ -503,7 +535,7 @@ func (m *Match4) updateGuest(dir float64, hidden bool) {
 		}
 	}
 	if p.Ph == PhPlay && !p.Paused {
-		cx, cy := limitVec(m.corrX*.25, m.corrY*.25, 12) // corrección repartida: se ve como una curva, no un salto
+		cx, cy := limitVec(m.corrX*.25, m.corrY*.25, 14) // corrección repartida: se ve como una curva, no un salto
 		m.corrX, m.corrY = m.corrX-cx, m.corrY-cy
 		p.X, p.Y = p.X+cx, p.Y+cy
 	}
@@ -558,7 +590,8 @@ func (m *Match4) effects(hidden bool) {
 	}
 	m.lastEv = p.Ev
 	if p.Ph == PhPlay && !p.Paused {
-		m.trail = append(m.trail, [2]float64{p.X, p.Y})
+		bx, by := m.BallPos()
+		m.trail = append(m.trail, [2]float64{bx, by})
 		if len(m.trail) > 7 {
 			m.trail = m.trail[1:]
 		}

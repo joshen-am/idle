@@ -83,11 +83,24 @@ func runX4(t *testing.T, dur time.Duration) {
 	maxJump := [3]float64{}
 	prev := [3][2]float64{}
 	logged := 0
+	lastLog := time.Now()
 	for time.Since(start) < dur && h.p.Ph != PhOver {
+		t0 := time.Now()
 		tick()
+		if dt := time.Since(t0); dt > 300*time.Millisecond {
+			t.Logf("un cuadro tardó %v", dt)
+		}
+		if time.Since(lastLog) > 5*time.Second {
+			lastLog = time.Now()
+			hp := h.p
+			t.Logf("anfitrión: ph=%d bola=(%.0f,%.0f) v=(%.0f,%.0f) pend=%d pausa=%v paletas=%.0f golpes=%d | G1 ph=%d bola=(%.0f,%.0f) | G2 ph=%d bola=(%.0f,%.0f)",
+				hp.Ph, hp.X, hp.Y, hp.VX, hp.VY, hp.Pending, hp.Paused, hp.Pad, hp.Hits,
+				ms[1].p.Ph, ms[1].p.X, ms[1].p.Y, ms[2].p.Ph, ms[2].p.X, ms[2].p.Y)
+		}
 		for i, m := range ms {
 			if m.p.Ph == PhPlay && !m.p.Paused {
-				d := math.Hypot(m.p.X-prev[i][0], m.p.Y-prev[i][1]) - m.p.Sp*Dt
+				bx, by := m.BallPos() // lo que se ve
+				d := math.Hypot(bx-prev[i][0], by-prev[i][1]) - m.p.Sp*Dt
 				if prev[i][0] != 0 && d > 25 && logged < 12 {
 					logged++
 					t.Logf("salto %d: %.0f px de (%.0f,%.0f) a (%.0f,%.0f) v=(%.0f,%.0f) pend=%d vidas=%v", i, d, prev[i][0], prev[i][1], m.p.X, m.p.Y, m.p.VX, m.p.VY, m.p.Pending, m.p.Lives)
@@ -95,7 +108,7 @@ func runX4(t *testing.T, dur time.Duration) {
 				if prev[i][0] != 0 && d > maxJump[i] && d < 200 {
 					maxJump[i] = d
 				}
-				prev[i] = [2]float64{m.p.X, m.p.Y}
+				prev[i] = [2]float64{bx, by}
 			} else {
 				prev[i] = [2]float64{}
 			}
