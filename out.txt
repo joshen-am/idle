@@ -1,0 +1,10 @@
+=== RUN   TestConexionReal
+17:43:29.814 servidor: llega OPEN de 
+17:43:29.815 servidor: respuesta OPEN (id idle-v1-r-x7)
+17:43:31.901 red: entró el compañero (idle-v1-g168452b510da28ba)
+    net_test.go:54: conectado; anfitrión=true
+17:43:33.406 directo: probando [10.1.0.233:57056 127.0.0.1:57056 172.30.128.1:57056]
+    net_test.go:74: directo=false
+--- PASS: TestConexionReal (7.66s)
+PASS
+ok  	idle	7.759s
