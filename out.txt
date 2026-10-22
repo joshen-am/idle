@@ -1,0 +1,112 @@
+=== RUN   TestX4Real
+20:48:02.630 servidor: llega OPEN de 
+20:48:02.632 servidor: respuesta OPEN (id idle-v1-r-qc66ce-4a)
+20:48:02.644 x4: soy el anfitrión
+20:48:03.013 servidor: llega OPEN de 
+20:48:03.014 servidor: respuesta OPEN (id idle-v1-r-qc66ce-4b)
+20:48:03.014 servidor: llega OPEN de 
+20:48:03.015 servidor: respuesta OPEN (id idle-v1-r-qc66ce-4c)
+20:48:03.034 servidor: llega ID-TAKEN de 
+20:48:03.034 servidor: respuesta ID-TAKEN (id idle-v1-r-qc66ce-4a)
+20:48:03.423 servidor: llega OPEN de 
+20:48:03.423 servidor: respuesta OPEN (id idle-v1-g7a7844c056020937)
+20:48:03.596 red: entró el compañero (idle-v1-g7a7844c056020937)
+20:48:03.605 x4: entró un jugador por la sala 0 (ARRIBA)
+20:48:03.862 x4: entré como invitado (sala 0)
+20:48:04.256 servidor: llega ID-TAKEN de 
+20:48:04.257 servidor: respuesta ID-TAKEN (id idle-v1-r-qc66ce-4a)
+20:48:04.309 directo: probando [10.1.0.97:59643 127.0.0.1:59643 172.27.224.1:59643]
+20:48:04.309 directo: nos llegan sus respuestas (10.1.0.97:59643)
+20:48:04.670 servidor: llega OPEN de 
+20:48:04.671 servidor: respuesta OPEN (id idle-v1-g50a30917eb592a81)
+20:48:05.102 directo: probando [10.1.0.97:59646 127.0.0.1:59646 172.27.224.1:59646]
+20:48:05.103 directo: nos llegan sus respuestas (10.1.0.97:59646)
+20:48:05.103 directo: ¡funciona en los dos sentidos!
+20:48:05.212 directo: ¡funciona en los dos sentidos!
+20:48:05.314 servidor: llega EXPIRE de idle-v1-g50a30917eb592a81
+20:48:05.444 servidor: llega ID-TAKEN de 
+20:48:05.444 servidor: respuesta ID-TAKEN (id idle-v1-r-qc66ce-4b)
+20:48:05.840 servidor: llega OPEN de 
+20:48:05.840 servidor: respuesta OPEN (id idle-v1-g51f3e07b1d66acfe)
+20:48:06.009 red: entró el compañero (idle-v1-g51f3e07b1d66acfe)
+20:48:06.012 x4: entró un jugador por la sala 1 (IZQUIERDA)
+20:48:06.184 directo: probando [10.1.0.97:59644 127.0.0.1:59644 172.27.224.1:59644]
+20:48:06.184 directo: nos llegan sus respuestas (10.1.0.97:59644)
+20:48:06.406 x4: entré como invitado (sala 1)
+    x4_test.go:79: lugares: G1=ARRIBA G2=IZQUIERDA, jugadores 3
+20:48:07.514 directo: probando [10.1.0.97:59648 127.0.0.1:59648 172.27.224.1:59648]
+20:48:07.515 directo: nos llegan sus respuestas (10.1.0.97:59648)
+20:48:07.517 directo: ¡funciona en los dos sentidos!
+20:48:07.537 directo: ¡funciona en los dos sentidos!
+    x4_test.go:96: anfitrión: ph=2 bola=(255,140) v=(202,-7) pend=-1 pausa=false paletas=[228 224 121 116] golpes=1 | G1 ph=2 bola=(261,140) | G2 ph=2 bola=(261,140)
+    x4_test.go:96: anfitrión: ph=2 bola=(154,232) v=(-217,222) pend=-1 pausa=false paletas=[140 145 201 127] golpes=6 | G1 ph=2 bola=(148,238) | G2 ph=2 bola=(148,238)
+    x4_test.go:96: anfitrión: ph=1 bola=(147,147) v=(0,0) pend=-1 pausa=false paletas=[96 78 87 127] golpes=13 | G1 ph=1 bola=(147,147) | G2 ph=1 bola=(147,147)
+    x4_test.go:96: anfitrión: ph=2 bola=(108,228) v=(-14,282) pend=-1 pausa=false paletas=[88 89 187 127] golpes=17 | G1 ph=2 bola=(108,236) | G2 ph=2 bola=(108,236)
+    x4_test.go:96: anfitrión: ph=2 bola=(155,73) v=(17,560) pend=-1 pausa=false paletas=[135 134 81 59] golpes=25 | G1 ph=2 bola=(155,85) | G2 ph=2 bola=(155,85)
+    x4_test.go:96: anfitrión: ph=2 bola=(139,241) v=(-15,560) pend=-1 pausa=false paletas=[120 120 132 127] golpes=35 | G1 ph=2 bola=(139,255) | G2 ph=2 bola=(139,255)
+    x4_test.go:96: anfitrión: ph=2 bola=(164,23) v=(29,-213) pend=-1 pausa=false paletas=[143 143 28 189] golpes=42 | G1 ph=2 bola=(165,17) | G2 ph=2 bola=(165,17)
+    x4_test.go:96: anfitrión: ph=2 bola=(202,214) v=(-9,-360) pend=-1 pausa=false paletas=[182 182 214 127] golpes=48 | G1 ph=2 bola=(202,207) | G2 ph=2 bola=(202,208)
+    x4_test.go:96: anfitrión: ph=2 bola=(264,119) v=(72,555) pend=-1 pausa=false paletas=[228 228 77 154] golpes=57 | G1 ph=2 bola=(266,133) | G2 ph=2 bola=(266,133)
+    x4_test.go:96: anfitrión: ph=2 bola=(246,144) v=(32,-559) pend=-1 pausa=false paletas=[225 224 163 113] golpes=72 | G1 ph=2 bola=(246,132) | G2 ph=2 bola=(246,132)
+    x4_test.go:96: anfitrión: ph=2 bola=(194,173) v=(-250,-13) pend=-1 pausa=false paletas=[181 186 154 127] golpes=81 | G1 ph=2 bola=(187,173) | G2 ph=2 bola=(187,173)
+    x4_test.go:96: anfitrión: ph=2 bola=(17,266) v=(-39,384) pend=2 pausa=false paletas=[26 27 189 127] golpes=86 | G1 ph=2 bola=(52,175) | G2 ph=2 bola=(52,175)
+    x4_test.go:96: anfitrión: ph=2 bola=(130,129) v=(43,375) pend=-1 pausa=false paletas=[109 108 72 95] golpes=91 | G1 ph=2 bola=(132,139) | G2 ph=2 bola=(132,139)
+    x4_test.go:96: anfitrión: ph=2 bola=(216,34) v=(13,-560) pend=-1 pausa=false paletas=[196 195 115 151] golpes=100 | G1 ph=2 bola=(216,20) | G2 ph=2 bola=(216,20)
+    x4_test.go:120: vidas al final [4 3 1 4] (abajo, arriba, izq, der), golpes 111, velocidad 560
+    x4_test.go:121: saltos extra de la bola por cuadro: anfitrión 9.3, G1 11.4, G2 6.5
+    x4_test.go:122: directo G1=true G2=true
+    x4_test.go:125: IZQUIERDA perdió 3 vidas siendo un bot perfecto: sus golpes no llegan bien
+--- FAIL: TestX4Real (79.43s)
+FAIL
+FAIL	idle	79.537s
+FAIL
+=== RUN   TestX4Real
+20:49:23.196 servidor: llega OPEN de 
+20:49:23.197 servidor: respuesta OPEN (id idle-v1-r-qa7633-4a)
+20:49:23.205 x4: soy el anfitrión
+20:49:23.573 servidor: llega OPEN de 
+20:49:23.575 servidor: respuesta OPEN (id idle-v1-r-qa7633-4b)
+20:49:23.586 servidor: llega OPEN de 
+20:49:23.586 servidor: respuesta OPEN (id idle-v1-r-qa7633-4c)
+20:49:23.611 servidor: llega ID-TAKEN de 
+20:49:23.611 servidor: respuesta ID-TAKEN (id idle-v1-r-qa7633-4a)
+20:49:23.980 servidor: llega OPEN de 
+20:49:23.980 servidor: respuesta OPEN (id idle-v1-g549855f73cafe035)
+20:49:24.152 red: entró el compañero (idle-v1-g549855f73cafe035)
+20:49:24.160 x4: entró un jugador por la sala 0 (ARRIBA)
+20:49:24.434 x4: entré como invitado (sala 0)
+20:49:24.855 servidor: llega ID-TAKEN de 
+20:49:24.855 servidor: respuesta ID-TAKEN (id idle-v1-r-qa7633-4a)
+20:49:25.232 servidor: llega OPEN de 
+20:49:25.232 servidor: respuesta OPEN (id idle-v1-g5968cedad4c6023f)
+20:49:25.867 servidor: llega EXPIRE de idle-v1-g5968cedad4c6023f
+20:49:26.004 servidor: llega ID-TAKEN de 
+20:49:26.004 servidor: respuesta ID-TAKEN (id idle-v1-r-qa7633-4b)
+20:49:26.366 servidor: llega OPEN de 
+20:49:26.367 servidor: respuesta OPEN (id idle-v1-g5d3f4114642019c4)
+20:49:26.530 red: entró el compañero (idle-v1-g5d3f4114642019c4)
+20:49:26.546 x4: entró un jugador por la sala 1 (IZQUIERDA)
+20:49:26.973 x4: entré como invitado (sala 1)
+    x4_test.go:79: lugares: G1=ARRIBA G2=IZQUIERDA, jugadores 3
+    x4_test.go:96: anfitrión: ph=2 bola=(105,140) v=(41,-216) pend=-1 pausa=false paletas=[83 78 203 168] golpes=2 | G1 ph=2 bola=(102,156) | G2 ph=2 bola=(102,156)
+    x4_test.go:96: anfitrión: ph=2 bola=(191,217) v=(337,-27) pend=-1 pausa=false paletas=[136 41 208 175] golpes=7 | G1 ph=2 bola=(168,218) | G2 ph=2 bola=(168,218)
+    x4_test.go:96: anfitrión: ph=2 bola=(62,82) v=(-18,560) pend=-1 pausa=false paletas=[42 50 166 127] golpes=18 | G1 ph=2 bola=(62,33) | G2 ph=2 bola=(57,32)
+    x4_test.go:96: anfitrión: ph=2 bola=(262,137) v=(-204,-76) pend=-1 pausa=false paletas=[228 100 91 128] golpes=24 | G1 ph=2 bola=(275,142) | G2 ph=2 bola=(275,142)
+    x4_test.go:96: anfitrión: ph=2 bola=(275,167) v=(-139,-189) pend=-1 pausa=false paletas=[228 184 155 171] golpes=28 | G1 ph=2 bola=(266,168) | G2 ph=2 bola=(266,168)
+    x4_test.go:96: anfitrión: ph=2 bola=(270,173) v=(134,335) pend=-1 pausa=false paletas=[228 194 31 160] golpes=33 | G1 ph=2 bola=(261,150) | G2 ph=2 bola=(261,150)
+    x4_test.go:96: anfitrión: ph=2 bola=(221,133) v=(-2,-298) pend=-1 pausa=false paletas=[201 209 213 127] golpes=37 | G1 ph=2 bola=(221,154) | G2 ph=2 bola=(221,154)
+    x4_test.go:96: anfitrión: ph=2 bola=(17,118) v=(-372,-418) pend=2 pausa=false paletas=[51 138 223 127] golpes=45 | G1 ph=2 bola=(34,140) | G2 ph=2 bola=(33,141)
+    x4_test.go:96: anfitrión: ph=2 bola=(243,132) v=(17,-317) pend=-1 pausa=false paletas=[223 222 228 34] golpes=48 | G1 ph=2 bola=(242,157) | G2 ph=2 bola=(242,157)
+    x4_test.go:96: anfitrión: ph=1 bola=(147,147) v=(0,0) pend=-1 pausa=false paletas=[26 121 99 127] golpes=53 | G1 ph=1 bola=(147,147) | G2 ph=1 bola=(147,147)
+    x4_test.go:96: anfitrión: ph=1 bola=(147,147) v=(0,0) pend=-1 pausa=false paletas=[112 77 48 123] golpes=61 | G1 ph=2 bola=(121,268) | G2 ph=2 bola=(269,24)
+    x4_test.go:96: anfitrión: ph=1 bola=(147,147) v=(0,0) pend=-1 pausa=false paletas=[26 225 170 127] golpes=64 | G1 ph=1 bola=(147,147) | G2 ph=1 bola=(147,147)
+    x4_test.go:96: anfitrión: ph=2 bola=(164,17) v=(-189,-274) pend=1 pausa=false paletas=[144 175 35 127] golpes=68 | G1 ph=2 bola=(154,74) | G2 ph=2 bola=(118,52)
+    x4_test.go:96: anfitrión: ph=2 bola=(278,189) v=(242,-505) pend=-1 pausa=false paletas=[228 109 114 140] golpes=78 | G1 ph=2 bola=(271,258) | G2 ph=2 bola=(272,258)
+    x4_test.go:120: vidas al final [2 3 0 2] (abajo, arriba, izq, der), golpes 83, velocidad 380
+    x4_test.go:121: saltos extra de la bola por cuadro: anfitrión 9.3, G1 13.8, G2 13.6
+    x4_test.go:122: directo G1=false G2=false
+    x4_test.go:125: IZQUIERDA perdió 4 vidas siendo un bot perfecto: sus golpes no llegan bien
+--- FAIL: TestX4Real (79.38s)
+FAIL
+FAIL	idle	79.432s
+FAIL
