@@ -123,7 +123,7 @@ func (p *Pong4) serve() {
 	}
 	target := alive[rand.Intn(len(alive))]
 	p.Serves++
-	p.Sp = math.Min(150+12*float64(p.Serves), 320)
+	p.Sp = math.Min(170+15*float64(p.Serves), 360)
 	a := (rand.Float64() - .5) * 1.0
 	nx, ny := sideNormal(target) // hacia afuera de la cancha por ese lado
 	tx, ty := -ny, nx
@@ -243,7 +243,7 @@ func (p *Pong4) bounceWall(s int) {
 // Hit: la paleta de ese lado devuelve la bola (rel: dónde pegó, -1..1).
 func (p *Pong4) Hit(s int, rel float64) {
 	p.snapTo(s)
-	p.Sp = math.Min(p.Sp*1.06, MaxSp4)
+	p.Sp = math.Min(p.Sp*1.09, MaxSp4)
 	a := rel * .95
 	nx, ny := sideNormal(s)
 	tx, ty := math.Abs(ny), math.Abs(nx) // a lo largo del lado (derecha o abajo)
@@ -262,7 +262,7 @@ func (p *Pong4) newErr() {
 		if e == 0 {
 			e = 1.15
 		}
-		p.cpuErr[i] = (rand.Float64() - .5) * PL4 * e
+		p.cpuErr[i] = (rand.Float64() - .5) * PL4 * e * math.Max(1, p.Sp/320) // más rápida, más le cuesta
 	}
 }
 
@@ -400,16 +400,10 @@ func (p *Pong4) moveBall(dt float64) {
 				} else if p.out(s) {
 					p.VX, p.VY = 0, 0 // se me pasó: espero lo que diga el anfitrión
 				}
-			case p.Predict:
-				if p.Covers(s) || p.Lives[s] <= 0 {
-					if p.Lives[s] <= 0 {
-						p.bounceWall(s)
-					} else {
-						p.Hit(s, p.Rel(s)) // casi siempre acierta: la bola no se queda esperando
-					}
-				} else if p.out(s) {
-					p.VX, p.VY = 0, 0
-				}
+			case p.Predict && p.Lives[s] <= 0:
+				p.bounceWall(s)
+			case p.Predict: // la paleta de otro: la veo con atraso, así que supongo que la devuelve
+				p.Hit(s, p.Rel(s)) // (si no, el anfitrión avisa enseguida y la bola vuelve al centro)
 			case p.Covers(s):
 				p.Hit(s, p.Rel(s))
 			case p.Remote[s] && p.Pending < 0:

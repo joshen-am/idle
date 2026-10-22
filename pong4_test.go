@@ -69,3 +69,38 @@ func TestPong4Remoto(t *testing.T) {
 		t.Fatalf("debería perder una vida: %d", p.Lives[STop])
 	}
 }
+
+// Partida completa sin red: yo (bot) + 3 CPU, hasta que termine, y el resultado se anota una vez.
+func TestMatch4SinRed(t *testing.T) {
+	m := &Match4{me: Avatar{Name: "YO"}, snd: &Sound{}, MySide: -1, p: NewPong4()}
+	m.becomeHost()
+	for k := range m.links {
+		if m.links[k] != nil {
+			m.links[k].Close()
+			m.links[k] = nil
+		}
+	}
+	for m.Players() < 4 {
+		m.AddCPU()
+	}
+	m.Start()
+	for i := 0; i < 60*400 && m.p.Ph != PhOver; i++ {
+		dir := 0.0
+		if m.p.Ph == PhPlay {
+			dir = clamp((m.p.along(SBottom)-(m.p.Pad[SBottom]+PL4/2))/8, -1, 1)
+		}
+		m.Update(dir, false)
+	}
+	over, won, w := m.Result()
+	if !over {
+		t.Fatalf("no terminó: vidas %v", m.p.Lives)
+	}
+	t.Logf("duró %.0fs, gané=%v, ganador %s", m.p.T, won, w.Av.DisplayName())
+	if again, _, _ := m.Result(); again {
+		t.Fatal("el resultado se anotó dos veces")
+	}
+	m.Start() // revancha
+	if m.p.Ph != PhCount || m.p.Lives[SLeft] != Lives4 {
+		t.Fatal("la revancha no reinició")
+	}
+}

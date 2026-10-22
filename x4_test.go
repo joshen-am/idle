@@ -15,6 +15,27 @@ func TestX4Real(t *testing.T) {
 	if os.Getenv("MJ_REAL") == "" {
 		t.Skip("solo con MJ_REAL=1")
 	}
+	runX4(t, 75*time.Second)
+}
+
+// Lo mismo con un servidor de prueba local que demora como internet, solo por el servidor.
+func TestX4Local(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+	url, stop := fakeSignal(70 * time.Millisecond)
+	defer stop()
+	t.Setenv("MJ_SIGNAL", url)
+	t.Setenv("MJ_NOLAN", os.Getenv("MJ_X4LAN"))
+	if os.Getenv("MJ_X4LAN") != "" {
+		t.Setenv("MJ_NOLAN", "")
+	} else {
+		t.Setenv("MJ_NOLAN", "1")
+	}
+	runX4(t, 40*time.Second)
+}
+
+func runX4(t *testing.T, dur time.Duration) {
 	room := fmt.Sprintf("Q%X", rand.Intn(1<<20))
 	snd := NewSound()
 	mk := func(name string) *Match4 {
@@ -61,11 +82,16 @@ func TestX4Real(t *testing.T) {
 	start := time.Now()
 	maxJump := [3]float64{}
 	prev := [3][2]float64{}
-	for time.Since(start) < 75*time.Second && h.p.Ph != PhOver {
+	logged := 0
+	for time.Since(start) < dur && h.p.Ph != PhOver {
 		tick()
 		for i, m := range ms {
 			if m.p.Ph == PhPlay && !m.p.Paused {
 				d := math.Hypot(m.p.X-prev[i][0], m.p.Y-prev[i][1]) - m.p.Sp*Dt
+				if prev[i][0] != 0 && d > 25 && logged < 12 {
+					logged++
+					t.Logf("salto %d: %.0f px de (%.0f,%.0f) a (%.0f,%.0f) v=(%.0f,%.0f) pend=%d vidas=%v", i, d, prev[i][0], prev[i][1], m.p.X, m.p.Y, m.p.VX, m.p.VY, m.p.Pending, m.p.Lives)
+				}
 				if prev[i][0] != 0 && d > maxJump[i] && d < 200 {
 					maxJump[i] = d
 				}

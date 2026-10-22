@@ -63,6 +63,9 @@ type Match4 struct {
 	recorded  bool
 	remoteHid [3]bool
 	ySent     time.Time
+	zAt       [3]time.Time
+	zSeqSent  [3]uint8
+	zSeq      uint8
 }
 
 func NewMatch4(room string, me Avatar, prof Profile, snd *Sound) *Match4 {
@@ -376,9 +379,24 @@ func (m *Match4) sendState() {
 	}
 	b = append(b, fl, byte(int8(p.Pending)))
 	f(p.Sp)
-	for _, n := range m.links { // por el servidor ~6 por segundo (tiene límite); directo, todos
-		if n != nil && n.Connected() && (m.tick%10 == 0 || n.Direct()) {
+	// por el servidor hay límite de mensajes: se manda apenas cambia la dirección de la bola
+	// (si ya pasó el mínimo entre mensajes) y si no, unas 5 veces por segundo. Directo, siempre.
+	changed := p.ASeq != m.zSeq
+	for k, n := range m.links {
+		if n == nil || !n.Connected() {
+			continue
+		}
+		since := time.Since(m.zAt[k])
+		if n.Direct() || since > 200*time.Millisecond || changed && since > RelayGap+5*time.Millisecond {
 			n.SendRaw('Z', b)
+			m.zAt[k] = time.Now()
+			m.zSeqSent[k] = p.ASeq
+		}
+	}
+	m.zSeq = p.ASeq
+	for k := range m.links { // un rebote que no salió todavía: que salga en cuanto se pueda
+		if m.zSeqSent[k] != p.ASeq {
+			m.zSeq = m.zSeqSent[k]
 		}
 	}
 }
@@ -467,15 +485,15 @@ func (m *Match4) updateGuest(dir float64, hidden bool) {
 		if p.Ph != PhPlay {
 			p.X, p.Y, p.VX, p.VY, m.corrX, m.corrY = X, Y, 0, 0, 0, 0
 		} else {
-			tx, ty := AdvanceFrom(ax, ay, avx, avy, age+lat)
+			tx, ty, svx, svy := m.simFrom(ax, ay, avx, avy, age+lat)
 			justHit := m.clock-m.hitLocal < .5 && (avx*p.VX+avy*p.VY) < 0 // mi rebote todavía no le llega
 			if !justHit {
-				if math.Hypot(tx-p.X, ty-p.Y) > 60 || p.VX == 0 && p.VY == 0 {
+				if math.Hypot(tx-p.X, ty-p.Y) > 150 || p.VX == 0 && p.VY == 0 {
 					p.X, p.Y, m.corrX, m.corrY = tx, ty, 0, 0
 				} else {
 					m.corrX, m.corrY = tx-p.X, ty-p.Y
 				}
-				p.VX, p.VY = avx, avy
+				p.VX, p.VY = svx, svy
 			}
 		}
 	}
@@ -485,7 +503,7 @@ func (m *Match4) updateGuest(dir float64, hidden bool) {
 		}
 	}
 	if p.Ph == PhPlay && !p.Paused {
-		cx, cy := limitVec(m.corrX*.2, m.corrY*.2, 5)
+		cx, cy := limitVec(m.corrX*.25, m.corrY*.25, 12) // corrección repartida: se ve como una curva, no un salto
 		m.corrX, m.corrY = m.corrX-cx, m.corrY-cy
 		p.X, p.Y = p.X+cx, p.Y+cy
 	}
@@ -511,6 +529,18 @@ func (m *Match4) updateGuest(dir float64, hidden bool) {
 	if m.Started && n.Lost() {
 		p.Ph = PhDC
 	}
+}
+
+// simFrom: dónde está la bola `age` segundos después del último rebote que mandó el anfitrión,
+// con paredes y paletas (si no, en cada rebote la corrección la tiraría para el lado equivocado).
+func (m *Match4) simFrom(ax, ay, vx, vy, age float64) (float64, float64, float64, float64) {
+	q := *m.p
+	q.OnHit, q.Mine, q.Predict, q.Paused, q.Ph = nil, -1, true, false, PhPlay
+	q.X, q.Y, q.VX, q.VY, q.Sp = ax, ay, vx, vy, math.Hypot(vx, vy)
+	for t := 0.0; t < age && (q.VX != 0 || q.VY != 0); t += Dt {
+		q.moveBall(math.Min(Dt, age-t))
+	}
+	return q.X, q.Y, q.VX, q.VY
 }
 
 // effects: sonidos, estela y destellos.
