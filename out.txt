@@ -1,0 +1,5 @@
+=== RUN   TestServidorRitmo
+    rate_test.go:60: ritmo 8/s: aguantó 90s, 720 enviados, 718 recibidos
+--- PASS: TestServidorRitmo (90.90s)
+PASS
+ok  	idle	90.944s
